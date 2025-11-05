@@ -12,6 +12,26 @@ eksctl create cluster --name=<MY_NAME> --enable-auto-mode --region <REGION>
 kubectl apply -f dev/eks/
 ```
 
+## Experiments
+
+We maintain repeatable EKS infrastructure experiments under `dev/eks/experiments/`. Each
+experiment is exposed through a simple CLI.
+
+Run an experiment with:
+
+```bash
+uv run -m dev.eks.experiments <experiment-name>
+```
+
+Currently available experiments:
+
+- `cross-az-persistence` — provisions a DevServer in one availability zone, writes data
+  to its PVC, tears it down, and then attempts to recreate it in a different zone to
+  demonstrate that standard EBS-backed volumes are zone-locked.
+
+See `dev/eks/experiments/README.md` for details on the experiment flow and how to add new
+experiments.
+
 ## GPU Nodepool
 The `gpu-nodepool.yml` configures a GPU-accelerated nodepool using Karpenter with:
 - NVIDIA GPU instance types (g6e and g6 families)
