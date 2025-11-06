@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 import io
 import sys
 import yaml
@@ -573,6 +573,9 @@ class TestUserCliIntegration:
             assert result.exit_code == 0
             kubeconfig_data = yaml.safe_load(result.output)
             assert kubeconfig_data["current-context"] == username
+
+            # In the Kind-based integration test environment, we expect a token,
+            # as the aws-auth ConfigMap will not be present.
             assert "token" in kubeconfig_data["users"][0]["user"]
 
             # 3. Write to a temp file and use it to list devservers
@@ -687,3 +690,131 @@ async def test_create_and_list_with_operator(
         except client.ApiException as e:
             if e.status != 404:
                 raise
+
+
+class TestUserCliUnit:
+    """Unit tests for the 'user' subcommand that do not require a k8s cluster."""
+
+    @pytest.mark.parametrize(
+        "host_url, cluster_name_in_context, expected_auth, expect_token_call",
+        [
+            ("https://localhost:8080", "local-cluster", {"method": "token"}, True),
+            (
+                "https://something.eks.amazonaws.com",
+                "arn:aws:eks:us-west-1:123456789012:cluster/eks-arn-cluster",
+                {"method": "exec", "region": "us-west-1", "name": "eks-arn-cluster"},
+                False,
+            ),
+            (
+                "https://irrelevant.host.com",
+                "eks-fqdn-cluster.us-east-1.eksctl.io",
+                {"method": "exec", "region": "us-east-1", "name": "eks-fqdn-cluster"},
+                False,
+            ),
+        ],
+    )
+    @patch("devservers.cli.handlers.user.config")
+    @patch("devservers.cli.handlers.user.client")
+    def test_generate_user_kubeconfig(
+        self,
+        mock_k8s_client,
+        mock_kube_config,
+        host_url,
+        cluster_name_in_context,
+        expected_auth,
+        expect_token_call,
+    ):
+        """Tests that the correct kubeconfig is generated for local and EKS clusters."""
+        username = f"test-user-{expected_auth.get('name', 'local')}"
+        namespace = f"dev-{username}"
+
+        # Mock away the check for the aws-auth configmap to control detection
+        mock_core_v1_api = mock_k8s_client.CoreV1Api.return_value
+        if expected_auth["method"] == "exec":
+            # If we expect an EKS kubeconfig, the aws-auth check should succeed
+            mock_core_v1_api.read_namespaced_config_map.return_value = True
+        else:
+            # Otherwise, it should raise a 404 Not Found error
+            # We must use a class that inherits from BaseException for the mock side_effect
+            class MockApiException(Exception):
+                def __init__(self, status=0, reason=None):
+                    self.status = status
+                    self.reason = reason
+
+            mock_core_v1_api.read_namespaced_config_map.side_effect = MockApiException(
+                status=404
+            )
+
+        # Mock CustomObjectsApi
+        mock_user_obj = {"status": {"namespace": namespace}}
+        mock_k8s_client.CustomObjectsApi.return_value.get_cluster_custom_object.return_value = (
+            mock_user_obj
+        )
+
+        # Mock CoreV1Api for token generation
+        mock_core_v1_api.create_namespaced_service_account_token.return_value.status.token = (
+            "test-token"
+        )
+
+        # Mock kubeconfig loading
+        mock_api_client_config = client.Configuration()
+        mock_api_client_config.host = host_url
+        mock_api_client_config.ssl_ca_cert = "/path/to/ca.crt"
+        mock_k8s_client.Configuration.get_default_copy.return_value = (
+            mock_api_client_config
+        )
+
+        mock_kube_config.list_kube_config_contexts.return_value = (
+            [],
+            {"context": {"cluster": cluster_name_in_context}},
+        )
+
+        with patch("builtins.open", mock_open(read_data=b"cert-data")), patch(
+            "base64.b64encode"
+        ) as mock_b64encode:
+            mock_b64encode.return_value.decode.return_value = "base64-cert-data"
+
+            captured_output = io.StringIO()
+            original_stdout = sys.stdout
+            try:
+                sys.stdout = captured_output
+                handlers.user.generate_user_kubeconfig(username)
+            finally:
+                sys.stdout = original_stdout
+
+            output = captured_output.getvalue()
+            kubeconfig_data = yaml.safe_load(output)
+
+            assert kubeconfig_data["current-context"] == username
+            user_auth = kubeconfig_data["users"][0]["user"]
+
+            if expected_auth["method"] == "token":
+                assert "token" in user_auth
+                assert user_auth["token"] == "test-token"
+                assert "exec" not in user_auth
+            elif expected_auth["method"] == "exec":
+                assert "exec" in user_auth
+                exec_config = user_auth["exec"]
+                assert (
+                    exec_config["apiVersion"] == "client.authentication.k8s.io/v1beta1"
+                )
+                assert exec_config["command"] == "aws"
+                assert exec_config["args"] == [
+                    "--region",
+                    expected_auth["region"],
+                    "eks",
+                    "get-token",
+                    "--cluster-name",
+                    expected_auth["name"],
+                    "--output",
+                    "json",
+                ]
+                assert exec_config["env"] is None
+                assert exec_config["interactiveMode"] == "IfAvailable"
+                assert exec_config["provideClusterInfo"] is False
+                assert "token" not in user_auth
+
+            if expect_token_call:
+                mock_k8s_client.CoreV1Api.return_value.create_namespaced_service_account_token.assert_called_once()
+            else:
+                mock_k8s_client.CoreV1Api.return_value.create_namespaced_service_account_token.assert_not_called()
