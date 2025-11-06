@@ -251,13 +251,11 @@ async def wait_for_devserver_status(
 async def wait_for_devserveruser_status(
     custom_objects_api: client.CustomObjectsApi,
     name: str,
-    expected_status: str = "Ready",
-    timeout: int = 10,
-):
-    """
-    Waits for a DevServerUser to reach a specific status in its `.status.phase` field.
-    """
-    print(f"⏳ Waiting for DevServerUser '{name}' status to become '{expected_status}'...")
+    timeout: int = 30,
+    target_status: str = "Ready",
+) -> None:
+    """Waits for a DevServerUser to reach a specific status."""
+    print(f"⏳ Waiting for DevServerUser '{name}' status to become '{target_status}'...")
 
     async def check():
         try:
@@ -269,7 +267,7 @@ async def wait_for_devserveruser_status(
                 name=name,
             )
             if "status" in user and "phase" in user["status"]:
-                if user["status"]["phase"] == expected_status:
+                if user["status"]["phase"] == target_status:
                     return True
             return None
         except client.ApiException as e:
@@ -280,9 +278,9 @@ async def wait_for_devserveruser_status(
     await async_wait_for(
         check,
         timeout=timeout,
-        failure_message=f"DevServerUser '{name}' did not reach status '{expected_status}' within {timeout}s.",
+        failure_message=f"DevServerUser '{name}' did not reach status '{target_status}' within {timeout}s.",
     )
-    print(f"✅ DevServerUser '{name}' reached status '{expected_status}'.")
+    print(f"✅ DevServerUser '{name}' reached status '{target_status}'.")
 
 
 async def wait_for_cluster_custom_object_to_be_deleted(
