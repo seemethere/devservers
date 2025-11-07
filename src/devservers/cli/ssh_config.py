@@ -13,13 +13,44 @@ def _get_permission_file(config_dir: Path) -> Path:
     return config_dir / "ssh-config-permission"
 
 
+def _add_include_directive_if_missing(ssh_config_path: Path, ssh_config_dir: Path):
+    """Adds the devserver include directive to a given SSH config file if it's not already present."""
+    include_line = f"Include {ssh_config_dir}/*.sshconfig\n"
+    try:
+        ssh_config_path.parent.mkdir(mode=0o700, exist_ok=True)
+        content = ssh_config_path.read_text() if ssh_config_path.exists() else ""
+        if include_line.strip() not in content:
+            new_content = include_line + "\n" + content
+            ssh_config_path.write_text(new_content)
+            ssh_config_path.chmod(0o600)
+    except Exception:
+        # Silently fail, as this is not a critical operation.
+        pass
+
+
+def _is_include_directive_present(ssh_config_dir: Path) -> bool:
+    """Checks if the devserver include directive is present in standard SSH config files."""
+    ssh_config_paths = [
+        Path.home() / ".ssh" / "config",
+        Path.home() / ".cursor" / "ssh_config",
+    ]
+    return all(
+        p.exists()
+        and f"Include {ssh_config_dir}/*.sshconfig" in p.read_text()
+        for p in ssh_config_paths
+    )
+
+
 def check_ssh_config_permission(
     ssh_config_dir: Path,
     ask_prompt: bool = False,
     assume_yes: bool = False,
 ) -> bool:
     """
-    Checks if the user has given permission to modify ~/.ssh/config.
+    Checks if the user has given permission to modify SSH config files.
+
+    It also checks if the configuration is already present in ~/.ssh/config and
+    ~/.cursor/ssh_config.
 
     Args:
         ssh_config_dir: The path to the devserver ssh config directory.
@@ -38,15 +69,9 @@ def check_ssh_config_permission(
         permission_file.write_text("yes")
         return True
 
-    ssh_config = Path.home() / ".ssh" / "config"
-    if ssh_config.exists():
-        try:
-            content = ssh_config.read_text()
-            if f"Include {ssh_config_dir}/*.sshconfig" in content:
-                permission_file.write_text("yes")
-                return True
-        except Exception:
-            pass
+    if _is_include_directive_present(ssh_config_dir):
+        permission_file.write_text("yes")
+        return True
 
     if ask_prompt:
         console = Console()
@@ -78,7 +103,11 @@ def ensure_ssh_config_include(
     assume_yes: bool = False,
 ) -> bool:
     """
-    Ensures the Include directive for devserver configs is present in ~/.ssh/config.
+    Ensures the Include directive for devserver configs is present in standard SSH config files.
+
+    This function will check for and add the directive to:
+    - ~/.ssh/config
+    - ~/.cursor/ssh_config
 
     Returns:
         True if the Include directive is present or was added, False otherwise.
@@ -88,23 +117,15 @@ def ensure_ssh_config_include(
     ):
         return False
 
-    ssh_dir = Path.home() / ".ssh"
-    ssh_dir.mkdir(mode=0o700, exist_ok=True)
+    ssh_config_paths = [
+        Path.home() / ".ssh" / "config",
+        Path.home() / ".cursor" / "ssh_config",
+    ]
 
-    ssh_config_path = ssh_dir / "config"
-    include_line = f"Include {ssh_config_dir}/*.sshconfig\n"
+    for ssh_config_path in ssh_config_paths:
+        _add_include_directive_if_missing(ssh_config_path, ssh_config_dir)
 
-    try:
-        content = ssh_config_path.read_text() if ssh_config_path.exists() else ""
-        if f"Include {ssh_config_dir}/" in content:
-            return True
-
-        new_content = include_line + "\n" + content
-        ssh_config_path.write_text(new_content)
-        ssh_config_path.chmod(0o600)
-        return True
-    except Exception:
-        return False
+    return True
 
 
 def set_ssh_config_permission(
