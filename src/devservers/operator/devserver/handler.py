@@ -78,6 +78,8 @@ async def create_or_update_devserver(
         flavor,
         logger,
         default_persistent_home_size=operator_config.default_persistent_home_size,
+        default_devserver_image=operator_config.default_devserver_image,
+        static_dependencies_image=operator_config.static_dependencies_image,
     )
 
     # Step 5: Update status

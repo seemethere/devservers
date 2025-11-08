@@ -26,12 +26,16 @@ class DevServerReconciler:
         spec: Dict[str, Any],
         flavor: Dict[str, Any],
         default_persistent_home_size: str,
+        default_devserver_image: str,
+        static_dependencies_image: str,
     ):
         self.name = name
         self.namespace = namespace
         self.spec = spec
         self.flavor = flavor
         self.default_persistent_home_size = default_persistent_home_size
+        self.default_devserver_image = default_devserver_image
+        self.static_dependencies_image = static_dependencies_image
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
 
@@ -53,6 +57,8 @@ class DevServerReconciler:
             self.spec,
             self.flavor,
             self.default_persistent_home_size,
+            self.default_devserver_image,
+            self.static_dependencies_image,
         )
 
         # Build ConfigMaps
@@ -203,6 +209,8 @@ async def reconcile_devserver(
     flavor: Dict[str, Any],
     logger: logging.Logger,
     default_persistent_home_size: str,
+    default_devserver_image: str,
+    static_dependencies_image: str,
 ) -> str:
     """
     Reconcile all Kubernetes resources for a DevServer.
@@ -218,7 +226,13 @@ async def reconcile_devserver(
         Status message indicating success
     """
     reconciler = DevServerReconciler(
-        name, namespace, spec, flavor, default_persistent_home_size
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size,
+        default_devserver_image,
+        static_dependencies_image,
     )
 
     # Build all resources

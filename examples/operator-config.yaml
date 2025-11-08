@@ -8,3 +8,21 @@ data:
     # Default size for persistent home directories if not specified in the DevServer spec.
     # Accepts standard Kubernetes quantity format (e.g., 10Gi, 500Mi).
     defaultPersistentHomeSize: 20Gi
+
+    # Interval in seconds for checking for expired DevServers.
+    expirationInterval: 60
+
+    # Interval in seconds for reconciling DevServerFlavor statuses.
+    flavorReconciliationInterval: 60
+
+    # Maximum number of concurrent reconciliations.
+    workerLimit: 1
+
+    # Whether to post reconciliation logs as Kubernetes events.
+    postingEnabled: false
+
+    # Default image for DevServers if not specified in the spec.
+    defaultDevserverImage: "seemethere/devserver-base:latest"
+
+    # Image for the init container that provides static dependencies like sshd.
+    staticDependenciesImage: "seemethere/devserver-static-dependencies:latest"

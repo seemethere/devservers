@@ -37,8 +37,8 @@ from ..crds.const import CRD_GROUP
 FINALIZER = f"finalizer.{CRD_GROUP}"
 
 # Operator settings
-EXPIRATION_INTERVAL = int(os.environ.get("DEVSERVER_EXPIRATION_INTERVAL", 60))
-FLAVOR_RECONCILIATION_INTERVAL = int(os.environ.get("DEVSERVER_FLAVOR_RECONCILIATION_INTERVAL", 60))
+EXPIRATION_INTERVAL = operator_config.expiration_interval
+FLAVOR_RECONCILIATION_INTERVAL = operator_config.flavor_reconciliation_interval
 
 
 @kopf.on.startup()
@@ -71,11 +71,11 @@ async def on_startup(
     # accepted common sense defaults. This is intentionally conservative and
     # can be tuned based on your cluster's capabilities.
     # TODO: Make this configurable via environment variable
-    settings.batching.worker_limit = 1
+    settings.batching.worker_limit = operator_config.worker_limit
 
     # All logs by default go to the k8s event api making api server flooding
     # even more likely. Disable event posting to reduce API load.
-    settings.posting.enabled = False
+    settings.posting.enabled = operator_config.posting_enabled
 
     # Start the background cleanup task for TTL expiration
     loop = asyncio.get_running_loop()
