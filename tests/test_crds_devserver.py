@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from kubernetes.config import ConfigException
+from kubernetes.client import ApiException
 
 from devservers.crds.base import ObjectMeta, _get_k8s_api
 from devservers.crds.devserver import DevServer
@@ -155,6 +156,57 @@ def test_devserver_delete(mock_k8s_api):
         name=DEVSERVER_NAME,
         body=unittest.mock.ANY,
     )
+
+
+def test_devserver_context_manager_creates_and_cleans_up(mock_k8s_api):
+    """Ensure the DevServer context manager creates and deletes resources."""
+    metadata = ObjectMeta(name=DEVSERVER_NAME, namespace=NAMESPACE)
+    spec = {"flavor": "cpu-small"}
+
+    mock_k8s_api.create_namespaced_custom_object.return_value = {
+        "metadata": {"name": DEVSERVER_NAME, "namespace": NAMESPACE},
+        "spec": spec,
+        "status": {"phase": "Pending"},
+    }
+
+    resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
+
+    with resource as created:
+        assert created.metadata.name == DEVSERVER_NAME
+        assert created is not resource
+
+    mock_k8s_api.create_namespaced_custom_object.assert_called_once()
+    mock_k8s_api.delete_namespaced_custom_object.assert_called_once_with(
+        group=DevServer.group,
+        version=DevServer.version,
+        namespace=NAMESPACE,
+        plural=DevServer.plural,
+        name=DEVSERVER_NAME,
+        body=unittest.mock.ANY,
+    )
+
+
+def test_devserver_context_manager_ignores_404_on_delete(mock_k8s_api):
+    """A missing resource during cleanup should not raise an error."""
+    metadata = ObjectMeta(name=DEVSERVER_NAME, namespace=NAMESPACE)
+    spec = {"flavor": "cpu-small"}
+
+    mock_k8s_api.create_namespaced_custom_object.return_value = {
+        "metadata": {"name": DEVSERVER_NAME, "namespace": NAMESPACE},
+        "spec": spec,
+        "status": {},
+    }
+    mock_k8s_api.delete_namespaced_custom_object.side_effect = ApiException(
+        status=404, reason="Not Found"
+    )
+
+    resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
+
+    with resource as created:
+        assert created.metadata.name == DEVSERVER_NAME
+
+    mock_k8s_api.create_namespaced_custom_object.assert_called_once()
+    mock_k8s_api.delete_namespaced_custom_object.assert_called_once()
 
 def test_devserver_refresh(mock_k8s_api):
     """Test the DevServer.refresh instance method."""
