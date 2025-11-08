@@ -26,7 +26,13 @@ def test_build_statefulset_with_node_selector():
     }
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "nodeSelector" in statefulset["spec"]["template"]["spec"]
@@ -53,7 +59,13 @@ def test_build_statefulset_without_node_selector():
     }
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "nodeSelector" not in statefulset["spec"]["template"]["spec"]
@@ -66,7 +78,13 @@ def test_build_statefulset_with_persistent_home_enabled():
     flavor = {"spec": {"resources": {}}}
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "volumeClaimTemplates" in statefulset["spec"]
@@ -85,7 +103,13 @@ def test_build_statefulset_with_persistent_home_enabled_and_size():
     flavor = {"spec": {"resources": {}}}
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "volumeClaimTemplates" in statefulset["spec"]
@@ -100,7 +124,13 @@ def test_build_statefulset_with_persistent_home_disabled():
     flavor = {"spec": {"resources": {}}}
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "volumeClaimTemplates" not in statefulset["spec"]
@@ -115,7 +145,13 @@ def test_build_statefulset_with_persistent_home_unspecified():
     flavor = {"spec": {"resources": {}}}
 
     statefulset = build_statefulset(
-        name, namespace, spec, flavor, default_persistent_home_size="10Gi"
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_persistent_home_size="10Gi",
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
     )
 
     assert "volumeClaimTemplates" not in statefulset["spec"]
