@@ -17,19 +17,20 @@ from devservers.operator.config import (
 
 def test_config_defaults_when_no_file():
     """Verify config uses defaults when the config file is not found."""
-    with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
-        config = OperatorConfig()
-        assert config.default_persistent_home_size == DEFAULT_PERSISTENT_HOME_SIZE
-        assert config.expiration_interval == DEFAULT_EXPIRATION_INTERVAL
-        assert (
-            config.flavor_reconciliation_interval
-            == DEFAULT_FLAVOR_RECONCILIATION_INTERVAL
-        )
-        assert config.worker_limit == DEFAULT_WORKER_LIMIT
-        assert config.posting_enabled == DEFAULT_POSTING_ENABLED
-        assert config.default_devserver_image == DEFAULT_DEVSERVER_IMAGE
-        assert config.static_dependencies_image == DEFAULT_STATIC_DEPENDENCIES_IMAGE
-        mock_file.assert_called_once_with("/etc/devserver-operator/config.yaml", "r")
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("builtins.open", side_effect=FileNotFoundError) as mock_file:
+            config = OperatorConfig()
+            assert config.default_persistent_home_size == DEFAULT_PERSISTENT_HOME_SIZE
+            assert config.expiration_interval == DEFAULT_EXPIRATION_INTERVAL
+            assert (
+                config.flavor_reconciliation_interval
+                == DEFAULT_FLAVOR_RECONCILIATION_INTERVAL
+            )
+            assert config.worker_limit == DEFAULT_WORKER_LIMIT
+            assert config.posting_enabled == DEFAULT_POSTING_ENABLED
+            assert config.default_devserver_image == DEFAULT_DEVSERVER_IMAGE
+            assert config.static_dependencies_image == DEFAULT_STATIC_DEPENDENCIES_IMAGE
+            mock_file.assert_called_once_with("/etc/devserver-operator/config.yaml", "r")
 
 
 def test_config_loads_from_file():
@@ -45,16 +46,17 @@ def test_config_loads_from_file():
     }
     mock_content = yaml.dump(config_data)
 
-    with patch("builtins.open", mock_open(read_data=mock_content)) as mock_file:
-        config = OperatorConfig()
-        assert config.default_persistent_home_size == "20Gi"
-        assert config.expiration_interval == 120
-        assert config.flavor_reconciliation_interval == 180
-        assert config.worker_limit == 5
-        assert config.posting_enabled is True
-        assert config.default_devserver_image == "my-custom-image:latest"
-        assert config.static_dependencies_image == "my-custom-static-image:latest"
-        mock_file.assert_called_once_with("/etc/devserver-operator/config.yaml", "r")
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("builtins.open", mock_open(read_data=mock_content)) as mock_file:
+            config = OperatorConfig()
+            assert config.default_persistent_home_size == "20Gi"
+            assert config.expiration_interval == 120
+            assert config.flavor_reconciliation_interval == 180
+            assert config.worker_limit == 5
+            assert config.posting_enabled is True
+            assert config.default_devserver_image == "my-custom-image:latest"
+            assert config.static_dependencies_image == "my-custom-static-image:latest"
+            mock_file.assert_called_once_with("/etc/devserver-operator/config.yaml", "r")
 
 
 def test_config_loads_from_env_var_path():
