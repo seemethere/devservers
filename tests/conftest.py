@@ -70,6 +70,18 @@ def test_ssh_key_pair(tmp_path_factory: Any) -> dict[str, str]:
     }
 
 
+@pytest.fixture
+def mock_home_dir(monkeypatch: Any, tmp_path: Path) -> Path:
+    """
+    Fixture to create a mock home directory and monkeypatch Path.home() to use it.
+    This prevents tests from modifying the user's actual home directory.
+    """
+    home_path = tmp_path / "home"
+    home_path.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home_path)
+    return home_path
+
+
 @pytest.fixture(scope="session")
 def test_ssh_public_key(tmp_path_factory):
     """Creates a dummy SSH public key file for tests."""

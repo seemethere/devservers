@@ -29,6 +29,7 @@ async def test_ssh_command_functional_on_various_images(
     test_ssh_key_pair: dict[str, str],
     image: str,
     test_config: Configuration,
+    mock_home_dir: Path,
 ) -> None:
     """
     Functional test for the 'ssh' command that verifies an actual SSH connection
@@ -136,6 +137,7 @@ async def test_ssh_config_file_management(
     test_ssh_key_pair: dict[str, str],
     monkeypatch,
     tmp_path: Path,
+    mock_home_dir: Path,
 ) -> None:
     """
     Tests the creation, content, and cleanup of the devserver SSH config files.
@@ -325,6 +327,7 @@ async def test_ssh_config_with_kubeconfig_path(
     test_ssh_key_pair: dict[str, str],
     monkeypatch,
     tmp_path: Path,
+    mock_home_dir: Path,
 ) -> None:
     """
     Tests that the SSH config correctly includes the kubeconfig path when provided.
