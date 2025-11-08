@@ -9,7 +9,7 @@ from tests.helpers import (
 )
 import uuid
 from devservers.operator.devserver import lifecycle
-from devservers.operator.devserver.resources.statefulset import DEFAULT_DEVSERVER_IMAGE
+from devservers.operator.config import DEFAULT_DEVSERVER_IMAGE
 from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, timedelta, timezone
 import logging
