@@ -4,7 +4,11 @@ DEFAULT_DEVSERVER_IMAGE = "seemethere/devserver-base:latest"
 
 
 def build_statefulset(
-    name: str, namespace: str, spec: Dict[str, Any], flavor: Dict[str, Any]
+    name: str,
+    namespace: str,
+    spec: Dict[str, Any],
+    flavor: Dict[str, Any],
+    default_persistent_home_size: str,
 ) -> Dict[str, Any]:
     """Builds the StatefulSet for the DevServer."""
     image = spec.get("image", DEFAULT_DEVSERVER_IMAGE)
@@ -14,7 +18,7 @@ def build_statefulset(
 
     persistent_home = spec.get("persistentHome", {})
     persistent_home_enabled = persistent_home.get("enabled", False)
-    persistent_home_size = persistent_home.get("size", "10Gi")
+    persistent_home_size = persistent_home.get("size", default_persistent_home_size)
 
     statefulset_spec = {
         "replicas": 1,

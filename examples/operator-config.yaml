@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devserver-operator-config
+  namespace: devserver-operator # Or the namespace where your operator is running
+data:
+  config.yaml: |
+    # Default size for persistent home directories if not specified in the DevServer spec.
+    # Accepts standard Kubernetes quantity format (e.g., 10Gi, 500Mi).
+    defaultPersistentHomeSize: 20Gi

@@ -19,11 +19,19 @@ class DevServerReconciler:
     Handles the creation and management of Kubernetes resources for DevServer.
     """
 
-    def __init__(self, name: str, namespace: str, spec: Dict[str, Any], flavor: Dict[str, Any]):
+    def __init__(
+        self,
+        name: str,
+        namespace: str,
+        spec: Dict[str, Any],
+        flavor: Dict[str, Any],
+        default_persistent_home_size: str,
+    ):
         self.name = name
         self.namespace = namespace
         self.spec = spec
         self.flavor = flavor
+        self.default_persistent_home_size = default_persistent_home_size
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
 
@@ -39,7 +47,13 @@ class DevServerReconciler:
         ssh_service = build_ssh_service(self.name, self.namespace)
 
         # Build StatefulSet
-        statefulset = build_statefulset(self.name, self.namespace, self.spec, self.flavor)
+        statefulset = build_statefulset(
+            self.name,
+            self.namespace,
+            self.spec,
+            self.flavor,
+            self.default_persistent_home_size,
+        )
 
         # Build ConfigMaps
         sshd_configmap = build_configmap(self.name, self.namespace)
@@ -188,6 +202,7 @@ async def reconcile_devserver(
     spec: Dict[str, Any],
     flavor: Dict[str, Any],
     logger: logging.Logger,
+    default_persistent_home_size: str,
 ) -> str:
     """
     Reconcile all Kubernetes resources for a DevServer.
@@ -202,7 +217,9 @@ async def reconcile_devserver(
     Returns:
         Status message indicating success
     """
-    reconciler = DevServerReconciler(name, namespace, spec, flavor)
+    reconciler = DevServerReconciler(
+        name, namespace, spec, flavor, default_persistent_home_size
+    )
 
     # Build all resources
     resources = reconciler.build_resources()
