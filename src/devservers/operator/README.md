@@ -127,3 +127,31 @@ The codebase is structured to separate concerns for each Custom Resource Definit
 -   `src/devservers/operator/devserverflavor/`: Contains the handlers for the `DevServerFlavor` CRD, including support for default flavors.
 
 This structure makes it easier to extend the operator with new CRDs in the future.
+
+The DevServer Operator is configured via a ConfigMap, which is mounted into the operator's pod as a volume. This allows for runtime configuration without requiring changes to the operator's code or deployment manifest for common adjustments.
+
+### Configuration Options
+
+-   `defaultPersistentHomeSize`: Sets the default size for persistent home directories (`persistentHome.size`) when it is not explicitly specified in a `DevServer` resource. The value should be a string representing a Kubernetes quantity (e.g., `10Gi`, `500Mi`).
+
+### Example ConfigMap
+
+An example `ConfigMap` can be found at `examples/operator-config.yaml`. This can be customized and applied to your cluster.
+
+```yaml
+# examples/operator-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devserver-operator-config
+  namespace: devserver-operator # Or the namespace where your operator is running
+data:
+  config.yaml: |
+    # Default size for persistent home directories if not specified in the DevServer spec.
+    # Accepts standard Kubernetes quantity format (e.g., 10Gi, 500Mi).
+    defaultPersistentHomeSize: 20Gi
+```
+
+### Applying the Configuration
+
+To apply this configuration, you would create the `ConfigMap` in the same namespace as the operator and then mount it as a volume in the operator's `Deployment`. The volume should be mounted at `/etc/devserver-operator/`, and the `DEVSERVER_OPERATOR_CONFIG_PATH` environment variable can be set to `/etc/devserver-operator/config.yaml`.

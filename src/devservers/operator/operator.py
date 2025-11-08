@@ -25,6 +25,7 @@ from .devserverflavor.lifecycle import reconcile_flavors_periodically
 from . import devserver
 from . import devserveruser
 from . import devserverflavor
+from .config import config as operator_config
 from ..crds.const import CRD_GROUP
 
 
@@ -61,6 +62,9 @@ async def on_startup(
             raise kopf.PermanentError("Could not configure Kubernetes client.")
 
     logger.info("Operator started.")
+    logger.info(
+        f"Default persistent home size: {operator_config.default_persistent_home_size}"
+    )
 
     # The default worker limit is unbounded which means you can EASILY flood
     # your API server on restart unless you limit it. 1-5 are the generally

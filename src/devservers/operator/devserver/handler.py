@@ -8,6 +8,7 @@ from kubernetes import client
 from .validation import validate_and_normalize_ttl
 from .host_keys import ensure_host_keys_secret
 from .reconciler import reconcile_devserver
+from ..config import config as operator_config
 from ...crds.const import (
     CRD_GROUP,
     CRD_VERSION,
@@ -70,7 +71,14 @@ async def create_or_update_devserver(
     await ensure_host_keys_secret(name, namespace, owner_meta, logger)
 
     # Step 4: Reconcile all Kubernetes resources
-    status_message = await reconcile_devserver(name, namespace, spec, flavor, logger)
+    status_message = await reconcile_devserver(
+        name,
+        namespace,
+        spec,
+        flavor,
+        logger,
+        default_persistent_home_size=operator_config.default_persistent_home_size,
+    )
 
     # Step 5: Update status
     patch["status"] = {
