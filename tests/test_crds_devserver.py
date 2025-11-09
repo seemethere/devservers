@@ -169,13 +169,15 @@ def test_devserver_context_manager_creates_and_cleans_up(mock_k8s_api):
         "status": {"phase": "Pending"},
     }
 
-    resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
-
-    with resource as created:
-        assert created.metadata.name == DEVSERVER_NAME
-        assert created is not resource
+    # Since this test is not for the waiting logic, we can mock the main wait method.
+    with patch.object(DevServer, "wait_for_ready") as mock_wait_ready:
+        resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
+        with resource as created:
+            assert created.metadata.name == DEVSERVER_NAME
+            assert created is not resource
 
     mock_k8s_api.create_namespaced_custom_object.assert_called_once()
+    mock_wait_ready.assert_called_once()
     mock_k8s_api.delete_namespaced_custom_object.assert_called_once_with(
         group=DevServer.group,
         version=DevServer.version,
@@ -184,6 +186,64 @@ def test_devserver_context_manager_creates_and_cleans_up(mock_k8s_api):
         name=DEVSERVER_NAME,
         body=unittest.mock.ANY,
     )
+
+
+def test_devserver_context_manager_waits_for_running(mock_k8s_api):
+    """Ensure the DevServer context manager waits for the resource to be ready."""
+    metadata = ObjectMeta(name=DEVSERVER_NAME, namespace=NAMESPACE)
+    spec = {"flavor": "cpu-small"}
+
+    # Provide the nested attribute that the real method will call
+    mock_k8s_api.api_client = unittest.mock.MagicMock()
+
+    mock_k8s_api.create_namespaced_custom_object.return_value = {
+        "metadata": {"name": DEVSERVER_NAME, "namespace": NAMESPACE},
+        "spec": spec,
+        "status": {"phase": "Pending"},
+    }
+
+    # This object is the one that will be returned by DevServer.create()
+    created_devserver = DevServer(metadata, spec, {"phase": "Pending"}, mock_k8s_api)
+
+    # Mock the classmethod `create` to return our controlled instance
+    with patch.object(DevServer, "create", return_value=created_devserver) as mock_create, \
+         patch("devservers.crds.devserver.client.CoreV1Api") as mock_core_v1_api:
+
+        # Configure the CoreV1Api mock to return a ready pod
+        mock_core_v1_instance = mock_core_v1_api.return_value
+        pod_mock = unittest.mock.MagicMock()
+        pod_mock.status.container_statuses = [unittest.mock.MagicMock(ready=True)]
+        mock_core_v1_instance.read_namespaced_pod.return_value = pod_mock
+
+        # Mock the watch stream for wait_for_status
+        watch_events = [
+            {
+                "type": "MODIFIED",
+                "object": {
+                    "metadata": {"name": DEVSERVER_NAME},
+                    "status": {"phase": "Running", "extraData": "foobar"},
+                },
+            },
+        ]
+
+        # Mock refresh to update the status to Running when called inside wait_for_status
+        def refresh_side_effect():
+            if created_devserver.refresh.call_count > 1:
+                created_devserver.status = {"phase": "Running", "extraData": "foobar"}
+        created_devserver.refresh = unittest.mock.MagicMock(side_effect=refresh_side_effect)
+
+        # The DevServer instance we are entering the context with
+        devserver_instance = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api, wait_timeout=5)
+
+        with patch.object(created_devserver, 'watch', return_value=watch_events):
+            with devserver_instance as created:
+                assert created.metadata.name == DEVSERVER_NAME
+                assert created.status["phase"] == "Running"
+                assert created is created_devserver
+
+                mock_create.assert_called_once()
+                assert created_devserver.watch.called
+                mock_core_v1_instance.read_namespaced_pod.assert_called()
 
 
 def test_devserver_context_manager_ignores_404_on_delete(mock_k8s_api):
@@ -200,10 +260,11 @@ def test_devserver_context_manager_ignores_404_on_delete(mock_k8s_api):
         status=404, reason="Not Found"
     )
 
-    resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
-
-    with resource as created:
-        assert created.metadata.name == DEVSERVER_NAME
+    # Mock the wait method since it's not the focus of this test.
+    with patch.object(DevServer, "wait_for_ready"):
+        resource = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
+        with resource as created:
+            assert created.metadata.name == DEVSERVER_NAME
 
     mock_k8s_api.create_namespaced_custom_object.assert_called_once()
     mock_k8s_api.delete_namespaced_custom_object.assert_called_once()

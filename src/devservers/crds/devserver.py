@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, Optional, Type
 from types import TracebackType
+import time
+
 from kubernetes import client
 from kubernetes.client import ApiException
 from .base import BaseCustomResource, ObjectMeta
@@ -32,12 +34,47 @@ class DevServer(BaseCustomResource):
         spec: Dict[str, Any],
         status: Optional[Dict[str, Any]] = None,
         api: Optional[client.CustomObjectsApi] = None,
+        wait_timeout: int = 300,
     ) -> None:
         super().__init__(api)
         self.metadata = metadata
         self.spec = spec
         self.status = status or {}
+        self.wait_timeout = wait_timeout
         self._context_resource: Optional["DevServer"] = None
+
+    def wait_for_ready(self, timeout: int = 60) -> None:
+        """Waits for the underlying pod's containers to be ready."""
+        start = time.time()
+        now = start
+        for _ in self.wait_for_status(
+            status={"phase": "Running"}, timeout=timeout
+        ):
+            now = time.time()
+            if now - start > timeout:
+                raise TimeoutError(
+                    f"DevServer {self.metadata.name} did not become ready within {timeout} seconds."
+                )
+        core_v1 = client.CoreV1Api(self.api.api_client)
+        pod_name = f"{self.metadata.name}-0"
+
+        while time.time() - start < timeout:
+            try:
+                pod = core_v1.read_namespaced_pod(
+                    name=pod_name, namespace=self.metadata.namespace
+                )
+                if pod.status.container_statuses and all(
+                    cs.ready for cs in pod.status.container_statuses
+                ):
+                    return  # All containers are ready
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+            time.sleep(1)
+
+        raise TimeoutError(
+            f"Pod {pod_name} did not become ready within {timeout} seconds."
+        )
 
     @property
     def persistent_home(self) -> Optional[PersistentHomeSpec]:
@@ -75,6 +112,9 @@ class DevServer(BaseCustomResource):
             spec=self.spec,
             api=self.api,
         )
+
+
+        created.wait_for_ready(timeout=self.wait_timeout)
 
         self._context_resource = created
         return created
