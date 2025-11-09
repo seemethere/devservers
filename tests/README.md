@@ -38,6 +38,7 @@ make test MAX_JOBS=8
 -   **Integration by Default**: Most tests are integration tests that interact with a real Kubernetes API server.
 -   **Real Resources**: Tests create, manage, and delete real `DevServer` custom resources and verify that the operator creates the expected `StatefulSets`, `Services`, etc.
 -   **Robust Polling**: To avoid flaky tests, the suite uses a set of robust helper functions in `tests/helpers.py` that poll the Kubernetes API to wait for resources to reach their expected state, rather than relying on fixed `time.sleep()` calls.
+-   **DevServer Fixtures**: Most tests now rely on the `devserver_factory` (sync) and `async_devserver` (async) fixtures, which wrap the `DevServer` CRD context manager. They create the resource, wait for readiness, and ensure cleanup without duplicating polling logic in each test.
 -   **CLI Integration**: The test suite also runs `devctl` commands as subprocesses to verify the CLI's behavior against the running operator.
 -   **Session-Scoped Fixtures**: A `k3d` cluster and the running operator are managed by `pytest` session-scoped fixtures for efficiency, meaning they are set up once per test run.
 
