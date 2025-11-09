@@ -3,10 +3,10 @@ from devservers.crds.base import ObjectMeta
 from tests.conftest import TEST_NAMESPACE
 
 
-def test_devserver_exec_success_string_arg(operator_running, test_ssh_public_key):
+def test_devserver_exec_success_string_arg(operator_running, test_ssh_public_key, test_flavor):
     name = "test-exec-success"
     spec = {
-        "flavor": "cpu-small",
+        "flavor": test_flavor,
         "image": "ubuntu:22.04",
         "ssh": {"publicKey": test_ssh_public_key},
         "lifecycle": {"timeToLive": "10m"},
@@ -19,10 +19,10 @@ def test_devserver_exec_success_string_arg(operator_running, test_ssh_public_key
         assert result.stderr == ""
 
 
-def test_devserver_exec_success_list_arg(operator_running, test_ssh_public_key):
+def test_devserver_exec_success_list_arg(operator_running, test_ssh_public_key, test_flavor):
     name = "test-exec-success-list"
     spec = {
-        "flavor": "cpu-small",
+        "flavor": test_flavor,
         "image": "ubuntu:22.04",
         "ssh": {"publicKey": test_ssh_public_key},
         "lifecycle": {"timeToLive": "10m"},
@@ -35,10 +35,10 @@ def test_devserver_exec_success_list_arg(operator_running, test_ssh_public_key):
         assert result.stderr == ""
 
 
-def test_devserver_exec_shell_true(operator_running, test_ssh_public_key):
+def test_devserver_exec_shell_true(operator_running, test_ssh_public_key, test_flavor):
     name = "test-exec-shell"
     spec = {
-        "flavor": "cpu-small",
+        "flavor": test_flavor,
         "image": "ubuntu:22.04",
         "ssh": {"publicKey": test_ssh_public_key},
         "lifecycle": {"timeToLive": "10m"},
@@ -51,10 +51,10 @@ def test_devserver_exec_shell_true(operator_running, test_ssh_public_key):
         assert result.stderr == ""
 
 
-def test_devserver_exec_fail(operator_running, test_ssh_public_key):
+def test_devserver_exec_fail(operator_running, test_ssh_public_key, test_flavor):
     name = "test-exec-fail"
     spec = {
-        "flavor": "cpu-small",
+        "flavor": test_flavor,
         "image": "ubuntu:22.04",
         "ssh": {"publicKey": test_ssh_public_key},
         "lifecycle": {"timeToLive": "10m"},
