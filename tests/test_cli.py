@@ -15,6 +15,7 @@ from tests.conftest import TEST_NAMESPACE
 from kubernetes import client
 from typing import Any, Dict
 from tests.helpers import (
+    build_devserver_spec,
     wait_for_devserver_status,
     cleanup_devserver,
     wait_for_cluster_custom_object_to_be_deleted,
@@ -63,11 +64,12 @@ class TestCliIntegration:
             "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
             "kind": "DevServer",
             "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-            "spec": {
-                "flavor": "any-flavor",
-                "ssh": {"publicKey": "ssh-rsa AAA..."},
-                "lifecycle": {"timeToLive": "1h"},
-            },  # Flavor doesn't need to exist for this test
+            "spec": build_devserver_spec(
+                flavor="any-flavor",
+                public_key="ssh-rsa AAA...",
+                ttl="1h",
+                image=None,
+            ),
         }
 
         await asyncio.to_thread(
@@ -158,11 +160,12 @@ class TestCliIntegration:
             "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
             "kind": "DevServer",
             "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-            "spec": {
-                "flavor": "any-flavor",
-                "ssh": {"publicKey": "ssh-rsa AAA..."},
-                "lifecycle": {"timeToLive": "1h"},
-            },
+            "spec": build_devserver_spec(
+                flavor="any-flavor",
+                public_key="ssh-rsa AAA...",
+                ttl="1h",
+                image=None,
+            ),
         }
         await asyncio.to_thread(
             custom_objects_api.create_namespaced_custom_object,
@@ -210,11 +213,12 @@ class TestCliIntegration:
             "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
             "kind": "DevServer",
             "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-            "spec": {
-                "flavor": "any-flavor",
-                "ssh": {"publicKey": "ssh-rsa AAA..."},
-                "lifecycle": {"timeToLive": "1h"},
-            },  # Flavor doesn't need to exist for this test
+            "spec": build_devserver_spec(
+                flavor="any-flavor",
+                public_key="ssh-rsa AAA...",
+                ttl="1h",
+                image=None,
+            ),  # Flavor doesn't need to exist for this test
         }
 
         await asyncio.to_thread(
