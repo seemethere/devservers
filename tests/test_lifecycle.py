@@ -13,6 +13,7 @@ from devservers.operator.devserver import lifecycle
 from devservers.operator.devserver.resources.statefulset import DEFAULT_DEVSERVER_IMAGE
 from tests.conftest import TEST_NAMESPACE
 from tests.helpers import (
+    build_devserver_spec,
     wait_for_devserver_status,
     wait_for_statefulset_to_be_deleted,
     wait_for_statefulset_to_exist,
@@ -37,22 +38,16 @@ async def test_devserver_creates_statefulset(
 
     print(f"🧪 Starting test_devserver_creates_statefulset in namespace: {NAMESPACE}")
 
-    # 1. Create a DevServer custom resource
-    devserver_manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-        "kind": "DevServer",
-        "metadata": {"name": TEST_DEVSERVER_NAME, "namespace": NAMESPACE},
-        "spec": {
-            "flavor": test_flavor,
-            "image": "ubuntu:22.04",
-            "ssh": {"publicKey": "ssh-rsa AAAA..."},
-            "lifecycle": {"timeToLive": "1h"},
-        },
-    }
+    devserver_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        image="ubuntu:22.04",
+        ttl="1h",
+    )
 
     async with async_devserver(
         TEST_DEVSERVER_NAME,
-        spec=devserver_manifest["spec"],
+        spec=devserver_spec,
     ):
         # 2. Wait and check for the corresponding StatefulSet
         statefulset = await wait_for_statefulset_to_exist(
@@ -97,22 +92,16 @@ async def test_devserver_update_changes_image(
     initial_image = "ubuntu:22.04"
     updated_image = "fedora:latest"
 
-    # 1. Create a DevServer manifest
-    manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-        "kind": "DevServer",
-        "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-        "spec": {
-            "flavor": test_flavor,
-            "image": initial_image,
-            "ssh": {"publicKey": "ssh-rsa AAAA..."},
-            "lifecycle": {"timeToLive": "5m"},
-        },
-    }
+    initial_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        image=initial_image,
+        ttl="5m",
+    )
 
     async with async_devserver(
         devserver_name,
-        spec=manifest["spec"],
+        spec=initial_spec,
     ) as devserver:
         # 3. Wait for the StatefulSet and verify the initial image
         statefulset = await wait_for_statefulset_to_exist(
@@ -163,21 +152,21 @@ async def test_multiple_devservers(
     manifests = [
         {
             "metadata": {"name": devserver_names[0], "namespace": NAMESPACE},
-            "spec": {
-                "flavor": test_flavor,
-                "image": "fedora:38",
-                "ssh": {"publicKey": "ssh-rsa AAAA..."},
-                "lifecycle": {"timeToLive": "1h"},
-            },
+            "spec": build_devserver_spec(
+                flavor=test_flavor,
+                public_key="ssh-rsa AAAA...",
+                image="fedora:38",
+                ttl="1h",
+            ),
         },
         {
             "metadata": {"name": devserver_names[1], "namespace": NAMESPACE},
-            "spec": {
-                "flavor": test_flavor,
-                # No image specified, should use default
-                "ssh": {"publicKey": "ssh-rsa AAAA..."},
-                "lifecycle": {"timeToLive": "1h"},
-            },
+            "spec": build_devserver_spec(
+                flavor=test_flavor,
+                public_key="ssh-rsa AAAA...",
+                image=None,
+                ttl="1h",
+            ),
         },
     ]
 
@@ -237,20 +226,16 @@ async def test_devserver_expires_after_ttl(
     devserver_name = f"test-ttl-expiry-{uuid.uuid4().hex[:6]}"
     ttl_seconds = 2  # Keep TTL short, test is now deterministic
 
-    devserver_manifest = {
-        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
-        "kind": "DevServer",
-        "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-        "spec": {
-            "flavor": test_flavor,
-            "ssh": {"publicKey": "ssh-rsa AAAA..."},
-            "lifecycle": {"timeToLive": f"{ttl_seconds}s"},
-        },
-    }
+    devserver_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        ttl=f"{ttl_seconds}s",
+        image=None,
+    )
 
     async with async_devserver(
         devserver_name,
-        spec=devserver_manifest["spec"],
+        spec=devserver_spec,
     ):
         # 1. Verify StatefulSet is created
         await wait_for_statefulset_to_exist(

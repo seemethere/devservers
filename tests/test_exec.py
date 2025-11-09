@@ -6,6 +6,7 @@ import pytest
 from devservers.crds.base import ObjectMeta
 from devservers.crds.devserver import DevServer
 from tests.conftest import TEST_NAMESPACE
+from tests.helpers import build_devserver_spec
 
 
 @dataclass(frozen=True)
@@ -13,15 +14,6 @@ class ExecCommandExpectation:
     command: Union[str, Iterable[str]]
     shell: bool
     expected_stdout: str
-
-
-def _make_devserver_spec(flavor: str, public_key: str, image: str = "ubuntu:22.04") -> dict[str, object]:
-    return {
-        "flavor": flavor,
-        "image": image,
-        "ssh": {"publicKey": public_key},
-        "lifecycle": {"timeToLive": "10m"},
-    }
 
 
 @pytest.mark.parametrize(
@@ -61,7 +53,7 @@ def test_devserver_exec_success(
     expectation: ExecCommandExpectation,
 ) -> None:
     name = f"test-exec-{name_suffix}"
-    spec = _make_devserver_spec(test_flavor, test_ssh_public_key)
+    spec = build_devserver_spec(flavor=test_flavor, public_key=test_ssh_public_key)
     metadata = ObjectMeta(name=name, namespace=TEST_NAMESPACE)
     with DevServer(metadata=metadata, spec=spec) as devserver:
         result = devserver.exec(expectation.command, shell=expectation.shell)
@@ -72,7 +64,7 @@ def test_devserver_exec_success(
 
 def test_devserver_exec_fail(operator_running, test_ssh_public_key, test_flavor):
     name = "test-exec-fail"
-    spec = _make_devserver_spec(test_flavor, test_ssh_public_key)
+    spec = build_devserver_spec(flavor=test_flavor, public_key=test_ssh_public_key)
     metadata = ObjectMeta(name=name, namespace=TEST_NAMESPACE)
     with DevServer(metadata=metadata, spec=spec) as devserver:
         result = devserver.exec("exit 123", shell=True)

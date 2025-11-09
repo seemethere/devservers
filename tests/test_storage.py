@@ -3,6 +3,7 @@ import pytest
 from kubernetes import client
 from tests.conftest import TEST_NAMESPACE
 from tests.helpers import (
+    build_devserver_spec,
     wait_for_devserver_status,
     wait_for_pvc_to_exist,
     wait_for_statefulset_to_exist,
@@ -29,12 +30,13 @@ async def test_persistent_storage_retains_on_recreation(
     storage_size = "1Gi"
     pvc_name = f"home-{devserver_name}-0"
 
-    devserver_spec = {
-        "flavor": test_flavor,
-        "persistentHome": {"enabled": True, "size": storage_size},
-        "ssh": {"publicKey": "ssh-rsa AAAA..."},
-        "lifecycle": {"timeToLive": "1h"},
-    }
+    devserver_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+        image=None,
+        overrides={"persistentHome": {"enabled": True, "size": storage_size}},
+    )
 
     # 1. Initial Creation
     print("PHASE 1: Creating DevServer and PVC...")
