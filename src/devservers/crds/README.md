@@ -53,7 +53,9 @@ except Exception as e:
 
 #### Managing a DevServer Lifecycle with a Context Manager
 
-You can let the SDK handle creation **and** automatic cleanup by using the `DevServer` object as a context manager. When the `with` block exits—whether normally or via an exception—the resource is deleted.
+You can let the SDK handle creation **and** automatic cleanup by using the `DevServer` object as a context manager. When the `with` block is entered, the resource is created and the client **waits for it to become ready** (i.e., status phase is `Running`). When the block exits—whether normally or via an exception—the resource is deleted.
+
+This behavior makes it much simpler to write robust, synchronous code without manual polling.
 
 ```python
 from devservers.crds.devserver import DevServer
@@ -62,10 +64,14 @@ from devservers.crds.base import ObjectMeta
 metadata = ObjectMeta(name="cm-test-server", namespace="default")
 spec = {"flavor": "cpu-small", "image": "ubuntu:22.04"}
 
-# Automatically creates on enter and deletes on exit
-with DevServer(metadata=metadata, spec=spec) as server:
-    print(f"DevServer {server.metadata.name} is ready")
-    # perform work with the server here
+# The timeout for waiting can be configured on the object.
+# The context manager automatically creates, waits, and then deletes.
+with DevServer(metadata=metadata, spec=spec, wait_timeout=180) as server:
+    print(f"DevServer {server.metadata.name} is ready with status: {server.status}")
+    # The server is guaranteed to be in a 'Running' phase here.
+    # We can now immediately perform work, like executing a command.
+    result = server.exec("echo 'Hello from a ready server!'")
+    print(result.stdout)
 
 # At this point the DevServer has been deleted
 ```
@@ -185,3 +191,38 @@ try:
 except TimeoutError:
     print("Timed out waiting for the server to become ready.")
 ```
+
+#### Executing Commands in a DevServer
+
+The `exec` method allows you to run commands directly inside a running DevServer pod. Its interface is designed to be similar to Python's `subprocess.run`, providing a familiar and powerful way to interact with the server's container.
+
+Because the context manager now waits for the server to be ready, you no longer need to manually poll with `wait_for_status` before using `exec`.
+
+##### Example: Executing a Simple Command
+
+By default, `shell` is `False`. The command is executed directly, which is the safest method and does not require a shell to be present in the container.
+
+```python
+# Using the context manager ensures the server is ready before exec is called.
+with DevServer(metadata=metadata, spec=spec) as server:
+    # No need to wait, we can execute a command directly.
+    result = server.exec("echo 'hello from inside'")
+    print(result.stdout)  # Outputs: hello from inside
+
+    # You can also pass the command as a list
+    result_list = server.exec(["ls", "-l", "/home"])
+    print(result_list.stdout)
+```
+
+##### Example: Using Shell Features
+
+If you need to use shell features like pipes or redirection, set `shell=True`. This will execute the command via `/bin/sh -c`.
+
+```python
+with DevServer(metadata=metadata, spec=spec) as server:
+    # Use a shell to pipe the output of one command to another
+    result = server.exec("ps aux | grep my-process", shell=True)
+    print(result.stdout)
+```
+
+The `exec` method returns an `ExecResult` object, which contains `stdout`, `stderr`, and the `returncode` of the command, allowing you to inspect the outcome of the execution.
