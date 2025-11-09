@@ -14,8 +14,9 @@ import os
 from typing import Any
 
 import kopf
-from kubernetes import client, config
+from kubernetes import client
 
+from ..utils.kube import KubernetesConfigurationError, configure_kube_client
 from .devserver.lifecycle import cleanup_expired_devservers
 from .devserverflavor.lifecycle import reconcile_flavors_periodically
 # NOTE: This is what registers our operator's function with kopf so that
@@ -51,15 +52,9 @@ async def on_startup(
     This sets operator-wide settings and starts background tasks.
     """
     try:
-        config.load_incluster_config()
-        logger.info("Using in-cluster Kubernetes configuration.")
-    except config.ConfigException:
-        try:
-            config.load_kube_config()
-            logger.info("Using local kubeconfig.")
-        except config.ConfigException as e:
-            logger.error(f"Could not configure Kubernetes client: {e}")
-            raise kopf.PermanentError("Could not configure Kubernetes client.")
+        configure_kube_client(logger)
+    except KubernetesConfigurationError as exc:
+        raise kopf.PermanentError(str(exc)) from exc
 
     logger.info("Operator started.")
     logger.info(

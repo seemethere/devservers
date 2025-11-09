@@ -2,11 +2,11 @@ import unittest.mock
 from unittest.mock import patch
 
 import pytest
-from kubernetes.config import ConfigException
 
 from devservers.crds.base import ObjectMeta, _get_k8s_api
 from devservers.crds.devserver import DevServer
 from devservers.crds.errors import KubeConfigError
+from devservers.utils.kube import KubernetesConfigurationError
 
 NAMESPACE = "test-namespace"
 DEVSERVER_NAME = "test-devserver"
@@ -182,8 +182,8 @@ def test_get_k8s_api_raises_runtime_error_on_config_exception():
     Test that our helper function provides a user-friendly error when
     kubeconfig is not found.
     """
-    with patch("devservers.crds.base.config.load_kube_config") as mock_load:
-        mock_load.side_effect = ConfigException("Kube config not found")
+    with patch("devservers.crds.base.configure_kube_client") as mock_configure:
+        mock_configure.side_effect = KubernetesConfigurationError("Kube config not found")
 
         with pytest.raises(KubeConfigError) as excinfo:
             _get_k8s_api()

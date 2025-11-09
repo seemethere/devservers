@@ -4,8 +4,7 @@ import select
 from typing import Optional, cast
 import io
 
-from kubernetes import config
-
+from ...utils.kube import KubernetesConfigurationError, configure_kube_client
 from ...utils.network import kubernetes_port_forward
 from ..utils import get_current_context
 from ...crds.devserver import DevServer
@@ -17,7 +16,13 @@ def ssh_proxy_devserver(
     kubeconfig_path: Optional[str] = None,
 ) -> None:
     """Proxy SSH connection to a DevServer."""
-    config.load_kube_config(config_file=kubeconfig_path)
+    try:
+        configure_kube_client(
+            logger=None,
+            kubeconfig_path=kubeconfig_path,
+        )
+    except KubernetesConfigurationError:
+        sys.exit(1)
 
     _, target_namespace = get_current_context()
     if namespace:

@@ -10,8 +10,14 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from kubernetes import client, config, utils
+
 import kopf
+from kubernetes import client, utils
+
+from devservers.utils.kube import (
+    KubernetesConfigurationError,
+    configure_kube_client,
+)
 
 
 def install_crds():
@@ -19,9 +25,9 @@ def install_crds():
     print("🔧 Installing DevServer CRDs...")
 
     try:
-        config.load_kube_config()
-    except Exception as e:
-        print(f"❌ Failed to load kubeconfig: {e}")
+        configure_kube_client()
+    except KubernetesConfigurationError as exc:
+        print(f"❌ Failed to configure Kubernetes client: {exc}")
         print("ℹ️  Make sure you have kubectl configured and can access your cluster")
         sys.exit(1)
 
