@@ -269,6 +269,31 @@ def test_devserver_context_manager_ignores_404_on_delete(mock_k8s_api):
     mock_k8s_api.create_namespaced_custom_object.assert_called_once()
     mock_k8s_api.delete_namespaced_custom_object.assert_called_once()
 
+
+def test_devserver_context_manager_preserves_wait_timeout(mock_k8s_api):
+    """The created DevServer inherits the wait_timeout from the context manager."""
+    metadata = ObjectMeta(name=DEVSERVER_NAME, namespace=NAMESPACE)
+    spec = {"flavor": "cpu-small"}
+    custom_timeout = 42
+
+    created_devserver = DevServer(metadata=metadata, spec=spec, api=mock_k8s_api)
+    created_devserver.wait_for_ready = unittest.mock.MagicMock()
+
+    with patch.object(DevServer, "create", return_value=created_devserver) as mock_create:
+        resource = DevServer(
+            metadata=metadata,
+            spec=spec,
+            api=mock_k8s_api,
+            wait_timeout=custom_timeout,
+        )
+
+        with resource as created:
+            assert created is created_devserver
+
+    mock_create.assert_called_once()
+    assert created_devserver.wait_timeout == custom_timeout
+    created_devserver.wait_for_ready.assert_called_once_with(timeout=custom_timeout)
+
 def test_devserver_refresh(mock_k8s_api):
     """Test the DevServer.refresh instance method."""
     devserver = DevServer(

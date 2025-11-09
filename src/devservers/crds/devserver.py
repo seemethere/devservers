@@ -113,6 +113,9 @@ class DevServer(BaseCustomResource):
             api=self.api,
         )
 
+        if hasattr(created, "wait_timeout"):
+            created.wait_timeout = self.wait_timeout
+
 
         created.wait_for_ready(timeout=self.wait_timeout)
 
