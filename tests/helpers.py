@@ -1,8 +1,9 @@
 import asyncio
 import time
+from typing import Any, Callable, Coroutine, Mapping, Optional, TypeVar
+
 import pytest
 from kubernetes import client
-from typing import Any, Callable, Coroutine, TypeVar
 from devservers.crds.const import (
     CRD_GROUP,
     CRD_VERSION,
@@ -33,6 +34,38 @@ async def async_wait_for(
             return result
         await asyncio.sleep(interval)
     pytest.fail(failure_message)
+
+
+def build_devserver_spec(
+    *,
+    flavor: str,
+    public_key: Optional[str] = None,
+    image: Optional[str] = "ubuntu:22.04",
+    ttl: Optional[str] = "10m",
+    lifecycle: Optional[Mapping[str, Any]] = None,
+    overrides: Optional[Mapping[str, Any]] = None,
+) -> dict[str, Any]:
+    """
+    Construct a DevServer spec used across integration tests, ensuring
+    consistent defaults while allowing targeted overrides.
+    """
+    spec: dict[str, Any] = {"flavor": flavor}
+
+    if image is not None:
+        spec["image"] = image
+
+    if public_key is not None:
+        spec["ssh"] = {"publicKey": public_key}
+
+    if lifecycle is not None:
+        spec["lifecycle"] = dict(lifecycle)
+    elif ttl is not None:
+        spec["lifecycle"] = {"timeToLive": ttl}
+
+    if overrides:
+        spec.update(overrides)
+
+    return spec
 
 
 def wait_for(

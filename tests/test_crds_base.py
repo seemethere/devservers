@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from devservers.crds.base import BaseCustomResource, ObjectMeta
+from devservers.crds.base import BaseCustomResource, ObjectMeta, _is_status_subset
 import time
 
 # A minimal concrete implementation of the abstract base class for testing
@@ -25,11 +25,11 @@ def custom_resource(mock_k8s_api):
 
 def test_wait_for_status_already_correct(custom_resource):
     """Test that wait_for_status returns immediately if status is already correct."""
-    custom_resource.status = {"state": "Ready"}
+    custom_resource.status = {"state": "Ready", "extra": "field"}
 
     # Mock the refresh method to update the status
     def refresh_side_effect():
-        custom_resource.status = {"state": "Ready"}
+        custom_resource.status = {"state": "Ready", "extra": "field"}
 
     custom_resource.refresh = MagicMock(side_effect=refresh_side_effect)
 
@@ -51,7 +51,7 @@ def test_wait_for_status_succeeds_after_event(custom_resource):
         # The first call to refresh() happens before the watch.
         # The second call happens after the watch event is received.
         if custom_resource.refresh.call_count > 1:
-            custom_resource.status = desired_status
+            custom_resource.status = {"state": "Ready", "refreshed": True}
     custom_resource.refresh = MagicMock(side_effect=refresh_side_effect)
 
 
@@ -61,7 +61,7 @@ def test_wait_for_status_succeeds_after_event(custom_resource):
         "object": {
             "metadata": {"name": "test-resource"},
             "spec": {},
-            "status": desired_status,
+            "status": {"state": "Ready", "source": "event"},
         },
     }
 
@@ -104,12 +104,12 @@ def test_wait_for_status_yields_events(custom_resource):
     def refresh_side_effect():
         # Simulate the final status update when refresh is called
         if custom_resource.refresh.call_count > 1:
-             custom_resource.status = desired_status
+             custom_resource.status = {"state": "Ready", "final": True}
     custom_resource.refresh = MagicMock(side_effect=refresh_side_effect)
 
     events_to_yield = [
         {"type": "MODIFIED", "object": {"status": {"state": "Processing"}}},
-        {"type": "MODIFIED", "object": {"status": desired_status}},
+        {"type": "MODIFIED", "object": {"status": {"state": "Ready", "extra": "data"}}},
     ]
 
     with patch.object(custom_resource, 'watch', return_value=events_to_yield):
@@ -126,12 +126,12 @@ def test_wait_for_status_blocking_usage(custom_resource):
     desired_status = {"state": "Ready"}
 
     def refresh_side_effect():
-        custom_resource.status = desired_status
+        custom_resource.status = {"state": "Ready", "refreshed": True}
     custom_resource.refresh = MagicMock(side_effect=refresh_side_effect)
 
     mock_watch_event = {
         "type": "MODIFIED",
-        "object": {"status": desired_status},
+        "object": {"status": {"state": "Ready", "from_event": True}},
     }
 
     with patch.object(custom_resource, 'watch', return_value=[mock_watch_event]):
@@ -141,7 +141,7 @@ def test_wait_for_status_blocking_usage(custom_resource):
 
         # If we get here without a timeout, the test has passed.
         # The refresh mock will have been called, so the status should be updated.
-        assert custom_resource.status == desired_status
+        assert _is_status_subset(desired_status, custom_resource.status)
 
 
 def endless_watch_generator(*args, **kwargs):
@@ -255,4 +255,4 @@ def test_wait_for_status_reaches_desired_state_from_readme(mock_k8s_api):
 
     # Assert that we received the events and the final status is correct
     assert event_count == 2
-    assert resource.status == desired_status
+    assert _is_status_subset(desired_status, resource.status)

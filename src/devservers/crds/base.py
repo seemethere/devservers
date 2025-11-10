@@ -11,6 +11,18 @@ from .errors import KubeConfigError
 T = TypeVar("T", bound="BaseCustomResource")
 
 
+def _is_status_subset(subset: Dict[str, Any], superset: Dict[str, Any]) -> bool:
+    """
+    Checks if the `subset` dictionary is a subset of the `superset` dictionary.
+    """
+    if not superset:
+        return False
+    for key, value in subset.items():
+        if key not in superset or superset[key] != value:
+            return False
+    return True
+
+
 def _get_k8s_api() -> client.CustomObjectsApi:
     """
     Initializes and returns the Kubernetes CustomObjectsApi client.
@@ -305,7 +317,7 @@ class BaseCustomResource:
 
         # First, check the current state of the object. It might already be in the desired state.
         self.refresh()
-        if self.status == status:
+        if _is_status_subset(status, self.status):
             return
 
         while time.time() - start_time < timeout:
@@ -320,23 +332,23 @@ class BaseCustomResource:
                 watch_had_events = True
                 yield event
                 obj = event["object"]
-                if "status" in obj and obj["status"] == status:
+                if "status" in obj and _is_status_subset(status, obj["status"]):
                     # The event indicates we might be in the desired state.
                     # Refresh the object to get the absolute latest state and confirm.
                     self.refresh()
-                    if self.status == status:
+                    if _is_status_subset(status, self.status):
                         return
 
             # If the watch stream was empty, it may have timed out.
             # We should refresh and check the status before potentially re-watching.
             if not watch_had_events:
                 self.refresh()
-                if self.status == status:
+                if _is_status_subset(status, self.status):
                     return
 
         # After the while loop (due to timeout), do one last refresh and check.
         self.refresh()
-        if self.status == status:
+        if _is_status_subset(status, self.status):
             return
 
         raise TimeoutError(
