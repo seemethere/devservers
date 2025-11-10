@@ -10,7 +10,7 @@ from kubernetes import client
 
 from devservers.crds.const import CRD_GROUP, CRD_PLURAL_DEVSERVER, CRD_VERSION
 from devservers.operator.devserver import lifecycle
-from devservers.operator.devserver.resources.statefulset import DEFAULT_DEVSERVER_IMAGE
+from devservers.operator.config import DEFAULT_DEVSERVER_IMAGE
 from tests.conftest import TEST_NAMESPACE
 from tests.helpers import (
     build_devserver_spec,
