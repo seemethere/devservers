@@ -12,9 +12,12 @@ import uuid
 import os
 from typing import cast
 import subprocess
-from typing import Any
+from typing import Any, Callable, Dict, Optional
+from contextlib import AbstractAsyncContextManager
 from devservers.cli.config import Configuration
 from pathlib import Path
+from devservers.crds.base import ObjectMeta
+from devservers.crds.devserver import DevServer
 from devservers.crds.const import (
     CRD_GROUP,
     CRD_PLURAL_DEVSERVER,
@@ -315,6 +318,79 @@ def operator_running(operator_runner):
     # Additional per-test setup can go here if needed
     yield
     # Per-test cleanup can go here if needed
+
+
+# --- DevServer utilities for tests ---
+
+class AsyncDevServerContext(AbstractAsyncContextManager):
+    """
+    Async-compatible wrapper around the DevServer context manager.
+    Executes the blocking create/delete operations in a worker thread so
+    async tests can await readiness without re-implementing poll loops.
+    """
+
+    def __init__(self, devserver: DevServer):
+        self._devserver = devserver
+        self._resource: Optional[DevServer] = None
+
+    async def __aenter__(self) -> DevServer:
+        self._resource = await asyncio.to_thread(self._devserver.__enter__)
+        return self._resource
+
+    async def __aexit__(self, exc_type, exc, tb) -> Optional[bool]:
+        return await asyncio.to_thread(self._devserver.__exit__, exc_type, exc, tb)
+
+
+@pytest.fixture
+def devserver_factory(k8s_clients: Dict[str, Any]) -> Callable[..., DevServer]:
+    """
+    Provides a factory for constructing DevServer objects backed by the shared
+    CustomObjectsApi client. Intended for synchronous tests that want to make
+    direct use of the DevServer context manager.
+    """
+
+    def _factory(
+        name: str,
+        *,
+        namespace: str = TEST_NAMESPACE,
+        spec: Dict[str, Any],
+        wait_timeout: int = 300,
+    ) -> DevServer:
+        metadata = ObjectMeta(name=name, namespace=namespace)
+        return DevServer(
+            metadata=metadata,
+            spec=spec,
+            api=k8s_clients["custom_objects_api"],
+            wait_timeout=wait_timeout,
+        )
+
+    return _factory
+
+
+@pytest.fixture
+def async_devserver(k8s_clients: Dict[str, Any]) -> Callable[..., AsyncDevServerContext]:
+    """
+    Provides an async-compatible DevServer context factory for tests that run
+    under asyncio. The returned object can be used with ``async with``.
+    """
+
+    def _factory(
+        name: str,
+        *,
+        namespace: str = TEST_NAMESPACE,
+        spec: Dict[str, Any],
+        wait_timeout: int = 300,
+    ) -> AsyncDevServerContext:
+        metadata = ObjectMeta(name=name, namespace=namespace)
+        devserver = DevServer(
+            metadata=metadata,
+            spec=spec,
+            api=k8s_clients["custom_objects_api"],
+            wait_timeout=wait_timeout,
+        )
+        return AsyncDevServerContext(devserver)
+
+    return _factory
 
 
 # --- Constants for Tests ---
