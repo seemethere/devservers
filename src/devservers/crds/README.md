@@ -51,6 +51,25 @@ except Exception as e:
 
 ```
 
+#### Managing a DevServer Lifecycle with a Context Manager
+
+You can let the SDK handle creation **and** automatic cleanup by using the `DevServer` object as a context manager. When the `with` block exits—whether normally or via an exception—the resource is deleted.
+
+```python
+from devservers.crds.devserver import DevServer
+from devservers.crds.base import ObjectMeta
+
+metadata = ObjectMeta(name="cm-test-server", namespace="default")
+spec = {"flavor": "cpu-small", "image": "ubuntu:22.04"}
+
+# Automatically creates on enter and deletes on exit
+with DevServer(metadata=metadata, spec=spec) as server:
+    print(f"DevServer {server.metadata.name} is ready")
+    # perform work with the server here
+
+# At this point the DevServer has been deleted
+```
+
 #### Typed Spec Access
 
 For fields that have a defined structure, like `persistentHome`, the `DevServer` class provides typed properties for easier access and modification.
