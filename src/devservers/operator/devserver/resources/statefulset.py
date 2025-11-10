@@ -1,20 +1,24 @@
 from typing import Any, Dict
 
-DEFAULT_DEVSERVER_IMAGE = "seemethere/devserver-base:latest"
-
 
 def build_statefulset(
-    name: str, namespace: str, spec: Dict[str, Any], flavor: Dict[str, Any]
+    name: str,
+    namespace: str,
+    spec: Dict[str, Any],
+    flavor: Dict[str, Any],
+    default_persistent_home_size: str,
+    default_devserver_image: str,
+    static_dependencies_image: str,
 ) -> Dict[str, Any]:
     """Builds the StatefulSet for the DevServer."""
-    image = spec.get("image", DEFAULT_DEVSERVER_IMAGE)
+    image = spec.get("image", default_devserver_image)
 
     # Get the public key from the spec
     ssh_public_key = spec.get("ssh", {}).get("publicKey", "")
 
     persistent_home = spec.get("persistentHome", {})
     persistent_home_enabled = persistent_home.get("enabled", False)
-    persistent_home_size = persistent_home.get("size", "10Gi")
+    persistent_home_size = persistent_home.get("size", default_persistent_home_size)
 
     statefulset_spec = {
         "replicas": 1,
@@ -28,7 +32,7 @@ def build_statefulset(
                 "initContainers": [
                     {
                         "name": "install-sshd",
-                        "image": "seemethere/devserver-static-dependencies:latest",
+                        "image": static_dependencies_image,
                         "imagePullPolicy": "Always",
                         "command": ["/bin/sh", "-c"],
                         "args": [
