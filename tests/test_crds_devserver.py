@@ -2,6 +2,7 @@ import unittest.mock
 from unittest.mock import patch
 
 import pytest
+from kubernetes.client import ApiException
 
 from devservers.crds.base import ObjectMeta, _get_k8s_api
 from devservers.crds.devserver import DevServer
