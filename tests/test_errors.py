@@ -4,6 +4,7 @@ from kubernetes import client
 from tests.conftest import TEST_NAMESPACE
 from typing import Any, Dict
 from devservers.crds.const import CRD_GROUP, CRD_VERSION, CRD_PLURAL_DEVSERVER
+from tests.helpers import build_devserver_spec
 
 # Constants from the main test file
 NAMESPACE: str = TEST_NAMESPACE
@@ -24,12 +25,12 @@ def test_devserver_missing_flavor_error(
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "DevServer",
         "metadata": {"name": devserver_name, "namespace": NAMESPACE},
-        "spec": {
-            "flavor": "non-existent-flavor",
-            "image": "ubuntu:22.04",
-            "ssh": {"publicKey": "ssh-rsa AAA..."},
-            "lifecycle": {"timeToLive": "1h"},
-        },
+        "spec": build_devserver_spec(
+            flavor="non-existent-flavor",
+            public_key="ssh-rsa AAA...",
+            ttl="1h",
+            image="ubuntu:22.04",
+        ),
     }
 
     try:
