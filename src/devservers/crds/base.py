@@ -1,7 +1,9 @@
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Optional, Type, TypeVar, Generator
 import time
-from kubernetes import client, config, watch
+from kubernetes import client, watch
+
+from ..utils.kube import KubernetesConfigurationError, configure_kube_client
 
 from .errors import KubeConfigError
 
@@ -29,13 +31,12 @@ def _get_k8s_api() -> client.CustomObjectsApi:
     Kubernetes configuration cannot be loaded.
     """
     try:
-        config.load_kube_config()
-    except config.ConfigException as e:
-        # Re-raise with a more user-friendly message
+        configure_kube_client()
+    except KubernetesConfigurationError as exc:
         raise KubeConfigError(
             "Kubernetes configuration not found. Please ensure you have a valid "
             "kubeconfig file or are running in-cluster."
-        ) from e
+        ) from exc
 
     return client.CustomObjectsApi()
 

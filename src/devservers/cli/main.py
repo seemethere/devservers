@@ -1,19 +1,16 @@
+import logging
+import os
+from pathlib import Path
+from typing import Optional
+
 import click
 from rich.console import Console
 from rich.prompt import Confirm
-from pathlib import Path
-from typing import Optional
-import os
 
-from kubernetes import config as kube_config
-
+from ..utils.kube import KubernetesConfigurationError, configure_kube_client
 from . import handlers
+from .config import create_default_config, get_default_config_path, load_config
 from .ssh_config import ensure_ssh_config_include, set_ssh_config_permission
-from .config import (
-    load_config,
-    get_default_config_path,
-    create_default_config,
-)
 
 
 @click.group()
@@ -50,7 +47,10 @@ def main(ctx, config_path, assume_yes) -> None:
 
     ctx.obj["CONFIG"] = load_config(effective_config_path)
     ctx.obj["ASSUME_YES"] = assume_yes
-    kube_config.load_kube_config()
+    try:
+        configure_kube_client(logging.getLogger(__name__))
+    except KubernetesConfigurationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @main.command(help="Create a new DevServer.")
