@@ -4,6 +4,8 @@ import shlex
 from typing import Any, Dict, List, Optional, Type, Union
 from types import TracebackType
 import time
+import tarfile
+from io import BytesIO
 
 from kubernetes import client
 from kubernetes.client import ApiException
@@ -39,12 +41,14 @@ class DevServer(BaseCustomResource):
         status: Optional[Dict[str, Any]] = None,
         api: Optional[client.CustomObjectsApi] = None,
         wait_timeout: int = 300,
+        sync_workspace: Optional[Dict[str, str]] = None,
     ) -> None:
         super().__init__(api)
         self.metadata = metadata
         self.spec = spec
         self.status = status or {}
         self.wait_timeout = wait_timeout
+        self.sync_workspace = sync_workspace
         self._context_resource: Optional["DevServer"] = None
 
     def wait_for_ready(self, timeout: int = 60) -> None:
@@ -79,6 +83,82 @@ class DevServer(BaseCustomResource):
         raise TimeoutError(
             f"Pod {pod_name} did not become ready within {timeout} seconds."
         )
+
+    def _copy_to_pod(self, local_path: str, remote_path: str):
+        """Copies a local path to a remote path in the pod."""
+        pod_name = f"{self.metadata.name}-0"
+        namespace = self.metadata.namespace
+
+        core_v1 = client.CoreV1Api(self.api.api_client)
+
+        mkdir_result = self.exec(f"mkdir -p {remote_path}", shell=True)
+        if mkdir_result.returncode != 0:
+            raise RuntimeError(
+                f"Failed to create remote directory: {mkdir_result.stderr}"
+            )
+
+        tar_buffer = BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            tar.add(local_path, arcname=".")
+        tar_buffer.seek(0)
+
+        exec_command = ["tar", "xf", "-", "-C", remote_path]
+
+        resp = stream(
+            core_v1.connect_get_namespaced_pod_exec,
+            pod_name,
+            namespace,
+            command=exec_command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False,
+        )
+
+        stderr = ""
+        while resp.is_open():
+            resp.update(timeout=1)
+            if resp.peek_stderr():
+                stderr += resp.read_stderr()
+
+            if tar_buffer.tell() < tar_buffer.getbuffer().nbytes:
+                chunk = tar_buffer.read(4096)
+                if chunk:
+                    resp.write_stdin(chunk)
+
+        resp.close()
+
+        if stderr:
+            raise RuntimeError(f"Tar command failed: {stderr}")
+
+    def sync(self) -> None:
+        """
+        Syncs local workspace directories to their remote counterparts in the pod,
+        as defined in the `sync_workspace` dictionary.
+
+        This method should be called after the DevServer is fully initialized to
+        ensure the target user and directories exist.
+        """
+        if not self.sync_workspace:
+            return
+
+        user = self.spec.get("user", "dev")  # Default to dev user
+        for local_path, remote_path in self.sync_workspace.items():
+            self._copy_to_pod(local_path, remote_path)
+            if user:
+                # Retry chown for a while to give the operator time to create the user
+                for i in range(15):  # Retry for 15 seconds
+                    chown_result = self.exec(
+                        f"chown -R {user}:{user} {remote_path}", shell=True
+                    )
+                    if chown_result.returncode == 0:
+                        break
+                    time.sleep(1)
+                else:  # This else belongs to the for loop, runs if loop finishes without break
+                    raise RuntimeError(
+                        f"Failed to chown synced path '{remote_path}' after multiple retries: {chown_result.stderr}"
+                    )
 
     @property
     def persistent_home(self) -> Optional[PersistentHomeSpec]:
@@ -134,6 +214,7 @@ class DevServer(BaseCustomResource):
             core_v1.connect_get_namespaced_pod_exec,
             pod_name,
             self.metadata.namespace,
+            container="devserver",
             command=exec_command,
             stderr=True,
             stdin=False,
@@ -186,9 +267,10 @@ class DevServer(BaseCustomResource):
 
         if hasattr(created, "wait_timeout"):
             created.wait_timeout = self.wait_timeout
-
+        created.sync_workspace = self.sync_workspace
 
         created.wait_for_ready(timeout=self.wait_timeout)
+        created.sync()
 
         self._context_resource = created
         return created

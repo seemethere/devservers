@@ -76,6 +76,45 @@ with DevServer(metadata=metadata, spec=spec, wait_timeout=180) as server:
 # At this point the DevServer has been deleted
 ```
 
+#### Syncing a Local Workspace
+
+You can sync local directories or files into the `DevServer` when it's created. This is useful for populating a workspace, copying in dotfiles, or setting up a project.
+
+The sync is configured via the `sync_workspace` parameter in the `DevServer` constructor. This parameter takes a dictionary mapping local paths to remote paths inside the container.
+
+After the `DevServer` is ready, you must call the `sync()` method to perform the copy operation.
+
+```python
+import tempfile
+import os
+
+# Create a temporary local directory to sync
+local_dir = tempfile.mkdtemp()
+with open(os.path.join(local_dir, "hello.txt"), "w") as f:
+    f.write("hello from local workspace")
+
+# Define the local-to-remote mapping
+sync_map = {local_dir: "/workspace/project"}
+
+devserver_instance = DevServer(
+    metadata=metadata,
+    spec=spec,
+    sync_workspace=sync_map,
+)
+
+with devserver_instance as server:
+    # Call sync() after the server is ready
+    server.sync()
+
+    # Verify the file was copied
+    result = server.exec("cat /workspace/project/hello.txt")
+    print(result.stdout) # Outputs: hello from local workspace
+
+# The temporary directory can be cleaned up
+import shutil
+shutil.rmtree(local_dir)
+```
+
 #### Typed Spec Access
 
 For fields that have a defined structure, like `persistentHome`, the `DevServer` class provides typed properties for easier access and modification.
