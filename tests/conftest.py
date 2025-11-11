@@ -355,6 +355,7 @@ def devserver_factory(k8s_clients: Dict[str, Any]) -> Callable[..., DevServer]:
         namespace: str = TEST_NAMESPACE,
         spec: Dict[str, Any],
         wait_timeout: int = 300,
+        **kwargs,
     ) -> DevServer:
         metadata = ObjectMeta(name=name, namespace=namespace)
         return DevServer(
@@ -362,6 +363,7 @@ def devserver_factory(k8s_clients: Dict[str, Any]) -> Callable[..., DevServer]:
             spec=spec,
             api=k8s_clients["custom_objects_api"],
             wait_timeout=wait_timeout,
+            **kwargs,
         )
 
     return _factory
@@ -380,6 +382,7 @@ def async_devserver(k8s_clients: Dict[str, Any]) -> Callable[..., AsyncDevServer
         namespace: str = TEST_NAMESPACE,
         spec: Dict[str, Any],
         wait_timeout: int = 300,
+        **kwargs,
     ) -> AsyncDevServerContext:
         metadata = ObjectMeta(name=name, namespace=namespace)
         devserver = DevServer(
@@ -387,6 +390,7 @@ def async_devserver(k8s_clients: Dict[str, Any]) -> Callable[..., AsyncDevServer
             spec=spec,
             api=k8s_clients["custom_objects_api"],
             wait_timeout=wait_timeout,
+            **kwargs,
         )
         return AsyncDevServerContext(devserver)
 
