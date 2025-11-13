@@ -209,11 +209,15 @@ def test_devserver_context_manager_waits_for_running(mock_k8s_api):
     with patch.object(DevServer, "create", return_value=created_devserver) as mock_create, \
          patch("devservers.crds.devserver.client.CoreV1Api") as mock_core_v1_api:
 
-        # Configure the CoreV1Api mock to return a ready pod
+        # Configure the CoreV1Api mock to return a ready pod via list_namespaced_pod
         mock_core_v1_instance = mock_core_v1_api.return_value
         pod_mock = unittest.mock.MagicMock()
         pod_mock.status.container_statuses = [unittest.mock.MagicMock(ready=True)]
-        mock_core_v1_instance.read_namespaced_pod.return_value = pod_mock
+        pod_mock.metadata.name = f"{DEVSERVER_NAME}-abc123"
+        # list_namespaced_pod returns a V1PodList with items
+        pod_list_mock = unittest.mock.MagicMock()
+        pod_list_mock.items = [pod_mock]
+        mock_core_v1_instance.list_namespaced_pod.return_value = pod_list_mock
 
         # Mock the watch stream for wait_for_status
         watch_events = [
@@ -243,7 +247,7 @@ def test_devserver_context_manager_waits_for_running(mock_k8s_api):
 
                 mock_create.assert_called_once()
                 assert created_devserver.watch.called
-                mock_core_v1_instance.read_namespaced_pod.assert_called()
+                mock_core_v1_instance.list_namespaced_pod.assert_called()
 
 
 def test_devserver_context_manager_ignores_404_on_delete(mock_k8s_api):

@@ -77,7 +77,6 @@ async def create_or_update_devserver(
         spec,
         flavor,
         logger,
-        default_persistent_home_size=operator_config.default_persistent_home_size,
         default_devserver_image=operator_config.default_devserver_image,
         static_dependencies_image=operator_config.static_dependencies_image,
     )
@@ -95,15 +94,12 @@ async def delete_devserver(
     """
     Handle the deletion of a DevServer resource.
 
-    The StatefulSet and Services are owned by the DevServer via owner
+    The Deployment and Services are owned by the DevServer via owner
     references and will be garbage collected automatically.
 
-    Note: PVCs from StatefulSets are NOT automatically deleted to prevent
-    data loss. Administrators may need to clean them up manually.
+    Note: User-managed PVCs are NOT automatically deleted. Users must
+    manage their PVC lifecycle independently.
     """
     #TODO: Make a snapshot of the container
     logger.info(f"DevServer '{name}' in namespace '{namespace}' is being deleted.")
-    logger.info("Associated StatefulSet and Services will be garbage collected.")
-    logger.warning(
-        f"PersistentVolumeClaim for '{name}' will NOT be deleted automatically."
-    )
+    logger.info("Associated Deployment and Services will be garbage collected.")

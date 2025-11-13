@@ -15,6 +15,7 @@ from ...utils.network import PortForwardError, kubernetes_port_forward
 from ..config import Configuration
 from ..utils import get_current_context
 from ...crds.devserver import DevServer
+from ...utils.kube import get_pod_by_labels
 
 
 def warn_if_agent_forwarding_is_disabled(configuration: Configuration):
@@ -47,8 +48,15 @@ def ssh_devserver(
         # Check if DevServer exists
         DevServer.get(name=name, namespace=target_namespace)
 
-        # TODO: The pod name should be dynamically retrieved
-        pod_name = f"{name}-0"
+        # Get pod by label selector
+        core_v1_api = client.CoreV1Api()
+        pod = get_pod_by_labels(core_v1_api, target_namespace, {"app": name})
+        if not pod:
+            console.print(f"[red]Error: No pod found for DevServer '{name}'[/red]")
+            sys.exit(1)
+
+        assert pod.metadata is not None
+        pod_name = pod.metadata.name
 
         if not no_proxy:
             kubeconfig_path = os.environ.get("KUBECONFIG")

@@ -1,28 +1,22 @@
 from typing import Any, Dict
 
 
-def build_statefulset(
+def build_deployment(
     name: str,
     namespace: str,
     spec: Dict[str, Any],
     flavor: Dict[str, Any],
-    default_persistent_home_size: str,
     default_devserver_image: str,
     static_dependencies_image: str,
 ) -> Dict[str, Any]:
-    """Builds the StatefulSet for the DevServer."""
+    """Builds the Deployment for the DevServer."""
     image = spec.get("image", default_devserver_image)
 
     # Get the public key from the spec
     ssh_public_key = spec.get("ssh", {}).get("publicKey", "")
 
-    persistent_home = spec.get("persistentHome", {})
-    persistent_home_enabled = persistent_home.get("enabled", False)
-    persistent_home_size = persistent_home.get("size", default_persistent_home_size)
-
-    statefulset_spec = {
+    deployment_spec = {
         "replicas": 1,
-        "serviceName": f"{name}-headless",
         "selector": {"matchLabels": {"app": name}},
         "template": {
             "metadata": {"labels": {"app": name}},
@@ -129,25 +123,51 @@ def build_statefulset(
         },
     }
 
-    template = statefulset_spec["template"]
+    template = deployment_spec["template"]
     assert isinstance(template, dict)
     pod_spec = template["spec"]
     assert isinstance(pod_spec, dict)
     volumes = pod_spec.get("volumes")
     assert isinstance(volumes, list)
 
-    if persistent_home_enabled:
-        statefulset_spec["volumeClaimTemplates"] = [
-            {
-                "metadata": {"name": "home"},
-                "spec": {
-                    "accessModes": ["ReadWriteOnce"],
-                    "resources": {"requests": {"storage": persistent_home_size}},
-                },
-            }
-        ]
-    else:
+    # Docker-style volume mounting
+    user_volumes = spec.get("volumes", [])
+
+    if not user_volumes:
+        # No volumes specified: mount emptyDir at /home/dev (ephemeral)
         volumes.append({"name": "home", "emptyDir": {}})
+    else:
+        # User specified volumes: mount each PVC
+        containers = pod_spec.get("containers")
+        assert isinstance(containers, list)
+        container = containers[0]
+        assert isinstance(container, dict)
+        volume_mounts = container.get("volumeMounts")
+        assert isinstance(volume_mounts, list)
+
+        # Remove the default home mount since we'll add user-specified volumes
+        volume_mounts[:] = [vm for vm in volume_mounts if vm.get("name") != "home"]
+
+        for idx, volume in enumerate(user_volumes):
+            claim_name = volume["claimName"]
+            mount_path = volume["mountPath"]
+            read_only = volume.get("readOnly", False)
+
+            # Generate unique volume name for each mount
+            volume_name = f"user-volume-{idx}"
+
+            # Add to volumes list
+            volumes.append({
+                "name": volume_name,
+                "persistentVolumeClaim": {"claimName": claim_name}
+            })
+
+            # Add to volumeMounts list
+            volume_mounts.append({
+                "name": volume_name,
+                "mountPath": mount_path,
+                "readOnly": read_only
+            })
 
     # Remove nodeSelector if it is None
     if not pod_spec.get("nodeSelector"):
@@ -157,33 +177,12 @@ def build_statefulset(
     if not pod_spec.get("tolerations"):
         pod_spec.pop("tolerations", None)
 
-    # Add shared volume if specified
-    if "sharedVolumeClaimName" in spec:
-        pvc_name = spec["sharedVolumeClaimName"]
-
-        volumes = pod_spec.get("volumes")
-        assert isinstance(volumes, list)
-        # Add the volume that points to the existing PVC
-        volumes.append(
-            {"name": "shared", "persistentVolumeClaim": {"claimName": pvc_name}}
-        )
-
-        containers = pod_spec.get("containers")
-        assert isinstance(containers, list)
-        container = containers[0]
-        assert isinstance(container, dict)
-
-        volume_mounts = container.get("volumeMounts")
-        assert isinstance(volume_mounts, list)
-        # Mount the volume into the container
-        volume_mounts.append({"name": "shared", "mountPath": "/shared"})
-
     return {
         "apiVersion": "apps/v1",
-        "kind": "StatefulSet",
+        "kind": "Deployment",
         "metadata": {
             "name": name,
             "namespace": namespace,
         },
-        "spec": statefulset_spec,
+        "spec": deployment_spec,
     }
