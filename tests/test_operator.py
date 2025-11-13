@@ -232,6 +232,25 @@ def test_build_deployment_kind_is_deployment():
     assert "volumeClaimTemplates" not in deployment["spec"]
 
 
+def test_build_deployment_uses_recreate_strategy():
+    """Deployment should use Recreate strategy for RWO volumes"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {}
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    assert deployment["spec"].get("strategy") == {"type": "Recreate"}
+
+
 def test_compute_user_namespace_default():
     spec = {"username": "alice"}
     reconciler = DevServerUserReconciler(spec=spec, metadata={})

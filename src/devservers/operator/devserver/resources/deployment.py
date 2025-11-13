@@ -17,6 +17,7 @@ def build_deployment(
 
     deployment_spec = {
         "replicas": 1,
+        "strategy": {"type": "Recreate"},
         "selector": {"matchLabels": {"app": name}},
         "template": {
             "metadata": {"labels": {"app": name}},
