@@ -105,7 +105,8 @@ def is_expired(devserver: dict, logger: logging.Logger) -> bool:
         if not ttl_str:
             return False
 
-        creation_timestamp = datetime.fromisoformat(creation_timestamp_str)
+        # Handle 'Z' for UTC timezone explicitly for wider Python compatibility
+        creation_timestamp = datetime.fromisoformat(creation_timestamp_str.replace("Z", "+00:00"))
         ttl_delta = parse_duration(ttl_str)
         expiration_time = creation_timestamp + ttl_delta
         return datetime.now(timezone.utc) > expiration_time
