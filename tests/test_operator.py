@@ -131,7 +131,7 @@ def test_build_deployment_with_single_volume():
     assert home_volume is None, "home emptyDir volume should not exist when volumes are specified"
 
     # Should have user volume
-    user_volume = next((v for v in volumes if v.get("name", "").startswith("user-volume-")), None)
+    user_volume = next((v for v in volumes if v.get("name", "").startswith("vol-")), None)
     assert user_volume is not None, "user volume not found"
     assert "persistentVolumeClaim" in user_volume
     assert user_volume["persistentVolumeClaim"]["claimName"] == "my-pvc"
@@ -139,7 +139,7 @@ def test_build_deployment_with_single_volume():
     # Should have mount at /home/dev
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     user_mount = next(
-        (vm for vm in container["volumeMounts"] if vm.get("name", "").startswith("user-volume-")),
+        (vm for vm in container["volumeMounts"] if vm.get("name", "").startswith("vol-")),
         None
     )
     assert user_mount is not None, "user mount not found"
@@ -183,7 +183,7 @@ def test_build_deployment_with_multiple_volumes():
 
     # Should have 3 user volumes
     volumes = deployment["spec"]["template"]["spec"]["volumes"]
-    user_volumes = [v for v in volumes if v.get("name", "").startswith("user-volume-")]
+    user_volumes = [v for v in volumes if v.get("name", "").startswith("vol-")]
     assert len(user_volumes) == 3, f"Expected 3 user volumes, got {len(user_volumes)}"
 
     # Verify PVC claim names
@@ -194,7 +194,7 @@ def test_build_deployment_with_multiple_volumes():
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     user_mounts = [
         vm for vm in container["volumeMounts"]
-        if vm.get("name", "").startswith("user-volume-")
+        if vm.get("name", "").startswith("vol-")
     ]
     assert len(user_mounts) == 3, f"Expected 3 user mounts, got {len(user_mounts)}"
 
