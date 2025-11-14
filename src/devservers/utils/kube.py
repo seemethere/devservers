@@ -4,9 +4,9 @@ Shared helpers for configuring the Kubernetes Python client.
 from __future__ import annotations
 
 import logging
-from typing import Literal, Optional
+from typing import Dict, Literal, Optional
 
-from kubernetes import config as kube_config
+from kubernetes import client, config as kube_config
 
 
 class KubernetesConfigurationError(RuntimeError):
@@ -74,3 +74,30 @@ def configure_kube_client(
                 kubeconfig_error,
             )
             raise KubernetesConfigurationError(message) from kubeconfig_error
+
+
+def get_pod_by_labels(
+    core_v1: client.CoreV1Api,
+    namespace: str,
+    labels: Dict[str, str],
+) -> Optional[client.V1Pod]:
+    """
+    Find first pod matching label selector.
+
+    Args:
+        core_v1: Kubernetes CoreV1Api client
+        namespace: Namespace to search in
+        labels: Dictionary of labels to match (e.g., {"app": "my-devserver"})
+
+    Returns:
+        First matching pod, or None if no pods found
+    """
+    label_selector = ",".join(f"{k}={v}" for k, v in labels.items())
+    pods = core_v1.list_namespaced_pod(
+        namespace=namespace,
+        label_selector=label_selector
+    )
+
+    if pods.items:
+        return pods.items[0]
+    return None

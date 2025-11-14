@@ -5,7 +5,7 @@ from typing import Any, Dict
 import kopf
 from kubernetes import client
 
-from .validation import validate_and_normalize_ttl
+from .validation import validate_and_normalize_ttl, validate_volumes
 from .host_keys import ensure_host_keys_secret
 from .reconciler import reconcile_devserver
 from ..config import config as operator_config
@@ -44,6 +44,10 @@ async def create_or_update_devserver(
     ttl_str = spec.get("lifecycle", {}).get("timeToLive")
     validate_and_normalize_ttl(ttl_str, logger)
 
+    # Step 1b: Validate volumes
+    volumes = spec.get("volumes")
+    validate_volumes(volumes, logger)
+
     # Step 2: Get the DevServerFlavor
     custom_objects_api = client.CustomObjectsApi()
     try:
@@ -77,7 +81,6 @@ async def create_or_update_devserver(
         spec,
         flavor,
         logger,
-        default_persistent_home_size=operator_config.default_persistent_home_size,
         default_devserver_image=operator_config.default_devserver_image,
         static_dependencies_image=operator_config.static_dependencies_image,
     )
@@ -95,15 +98,12 @@ async def delete_devserver(
     """
     Handle the deletion of a DevServer resource.
 
-    The StatefulSet and Services are owned by the DevServer via owner
+    The Deployment and Services are owned by the DevServer via owner
     references and will be garbage collected automatically.
 
-    Note: PVCs from StatefulSets are NOT automatically deleted to prevent
-    data loss. Administrators may need to clean them up manually.
+    Note: User-managed PVCs are NOT automatically deleted. Users must
+    manage their PVC lifecycle independently.
     """
     #TODO: Make a snapshot of the container
     logger.info(f"DevServer '{name}' in namespace '{namespace}' is being deleted.")
-    logger.info("Associated StatefulSet and Services will be garbage collected.")
-    logger.warning(
-        f"PersistentVolumeClaim for '{name}' will NOT be deleted automatically."
-    )
+    logger.info("Associated Deployment and Services will be garbage collected.")

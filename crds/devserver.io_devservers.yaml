@@ -44,15 +44,19 @@ spec:
                     ncclSettings:
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
-                persistentHome:
-                  type: object
-                  properties:
-                    enabled:
-                      type: boolean
-                    size:
-                      type: string
-                sharedVolumeClaimName:
-                  type: string
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    required: ["claimName", "mountPath"]
+                    properties:
+                      claimName:
+                        type: string
+                      mountPath:
+                        type: string
+                      readOnly:
+                        type: boolean
+                        default: false
                 enableSSH:
                   type: boolean
                 ssh:

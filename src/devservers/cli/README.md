@@ -8,24 +8,42 @@ The `devctl` command-line interface provides a simple way to manage your DevServ
 
 Create a new DevServer.
 
-By default, DevServers are created with a persistent home directory of `10Gi`. You can control the size of this volume with the `--persistent-home-size` flag.
+By default, DevServers are created with **ephemeral storage** (no persistent volumes). To persist your home directory or mount datasets, use the `-v/--volume` flag with Docker-style syntax.
 
 ```bash
-# Create with explicit name and a larger 50Gi home directory
-devctl create --name my-server --flavor cpu-small --persistent-home-size 50Gi
+# Ephemeral DevServer (no persistent storage)
+devctl create --name my-server --flavor cpu-small
 
-# Create with auto-generated name (uses username-based default)
-devctl create --flavor cpu-small
+# DevServer with persistent home directory
+devctl create --name my-server --flavor cpu-small \
+  -v my-home-pvc:/home/dev
+
+# DevServer with multiple volumes (home + datasets)
+devctl create --name ml-server --flavor gpu-small \
+  -v alice-home:/home/dev \
+  -v shared-datasets:/data:ro \
+  -v results:/outputs
 
 # Create with default flavor if cluster admin has configured one
 devctl create
 ```
 
+#### Volume Syntax
+
+The `-v/--volume` flag uses Docker-style syntax:
+
+- `PVC_NAME:/path` - Mount a PVC at the specified path (read-write)
+- `PVC_NAME:/path:ro` - Mount a PVC read-only
+
+You can specify `-v` multiple times to mount multiple volumes. **Note**: PVCs must be created separately before creating the DevServer.
+
 The `--name` flag is optional. If not provided, a default name based on your username will be used. If your cluster has a default flavor configured, you can omit the `--flavor` flag as well.
 
 ### `delete`
 
-Delete a DevServer. Note that deleting the DevServer does not delete the associated `PersistentVolumeClaim` for the home directory. This must be cleaned up manually.
+Delete a DevServer.
+
+**Important**: Deleting a DevServer does NOT delete any associated PVCs. This is intentional - PVCs are user-managed resources and will persist after DevServer deletion, allowing you to reattach them to new DevServers.
 
 ```bash
 # Delete by name
@@ -34,6 +52,8 @@ devctl delete --name my-server
 # Delete your default server (omit name)
 devctl delete
 ```
+
+To delete PVCs, use `kubectl delete pvc <pvc-name>` separately.
 
 ### `describe`
 

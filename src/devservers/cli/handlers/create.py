@@ -43,17 +43,18 @@ def _get_pod_status_message(pod_name: str, pod_status: client.V1PodStatus) -> st
     return f"Pod '{pod_name}' is in an unknown state."
 
 
-def _wait_for_pod_ready(pod_name: str, namespace: str, status: Status) -> None:
+def _wait_for_pod_ready(devserver_name: str, namespace: str, status: Status) -> None:
     """Watches the DevServer pod until it is running and ready."""
     core_v1_api = client.CoreV1Api()
     w = watch.Watch()
     for event in w.stream(
         core_v1_api.list_namespaced_pod,
         namespace=namespace,
-        field_selector=f"metadata.name={pod_name}",
+        label_selector=f"app={devserver_name}",
     ):
         pod = event["object"]
         pod_status = pod.status
+        pod_name = pod.metadata.name
 
         # Check for readiness
         if (
@@ -71,17 +72,16 @@ def _wait_for_pod_ready(pod_name: str, namespace: str, status: Status) -> None:
 
 def _wait_for_devserver_ready(devserver: DevServer, console: Console) -> None:
     """Waits for the DevServer to become ready by watching the CRD and the pod."""
-    pod_name = f"{devserver.metadata.name}-0"
     with Status(
         f"Waiting for DevServer '{devserver.metadata.name}' to be provisioned...", console=console
     ) as status:
         _wait_for_crd_running(devserver, status)
 
         status.update(
-            f"DevServer '{devserver.metadata.name}' is running. Waiting for pod '{pod_name}' to be ready..."
+            f"DevServer '{devserver.metadata.name}' is running. Waiting for pod to be ready..."
         )
         assert devserver.metadata.namespace is not None
-        _wait_for_pod_ready(pod_name, devserver.metadata.namespace, status)
+        _wait_for_pod_ready(devserver.metadata.name, devserver.metadata.namespace, status)
 
     console.print(f"✅ DevServer '{devserver.metadata.name}' is ready.")
 
@@ -95,7 +95,7 @@ def create_devserver(
     namespace: Optional[str] = None,
     time_to_live: str = "4h",
     wait: bool = False,
-    persistent_home_size: str = "10Gi",
+    volumes: tuple[str, ...] = (),
 ) -> None:
     """Creates a new DevServer resource."""
     console = Console()
@@ -137,10 +137,29 @@ def create_devserver(
         "enableSSH": True,
     }
 
-    spec["persistentHome"] = {
-        "enabled": True,
-        "size": persistent_home_size,
-    }
+    # Parse and add volumes if provided
+    if volumes:
+        parsed_volumes = []
+        for vol_str in volumes:
+            parts = vol_str.split(":")
+            if len(parts) < 2 or len(parts) > 3:
+                console.print(
+                    f"[red]Error: Invalid volume format '{vol_str}'. "
+                    f"Expected format: PVC_NAME:/path or PVC_NAME:/path:ro[/red]"
+                )
+                sys.exit(1)
+
+            claim_name = parts[0]
+            mount_path = parts[1]
+            read_only = len(parts) == 3 and parts[2] == "ro"
+
+            parsed_volumes.append({
+                "claimName": claim_name,
+                "mountPath": mount_path,
+                "readOnly": read_only
+            })
+
+        spec["volumes"] = parsed_volumes
 
     # If an image is provided, use it, otherwise use the default from the operator
     if image:

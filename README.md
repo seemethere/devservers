@@ -11,6 +11,8 @@ A Kubernetes-native operator for managing development servers, particularly desi
 - **User Management**: `DevServerUser` CRDs for managing user access and SSH keys.
 - **Lifecycle Management**: Automatic shutdown and expiration.
 - **CLI Tool**: `devctl` for easy interaction with DevServers.
+- **Docker-style Volume Mounting**: Mount PVCs at custom paths with familiar `-v` syntax.
+- **Flexible Storage**: Ephemeral by default, persistent when you need it.
 - **SSH Agent Forwarding**: Seamlessly forward your SSH agent to the DevServer.
 - **YAML Configuration**: Configure `devctl` using `~/.config/devctl/config.yaml`.
 - **Test-Driven Development**: Comprehensive test suite using `pytest` and `k3d`.
@@ -52,21 +54,76 @@ make run
 In a new terminal:
 
 ```bash
-# Create a development server
+# Create an ephemeral development server (no persistent storage)
 uv run devctl create --name mydev --flavor cpu-small
+
+# Create a server with persistent home directory
+# First, create a PVC:
+kubectl create -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mydev-home
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+EOF
+
+# Then create the DevServer with the volume:
+uv run devctl create --name mydev --flavor cpu-small \
+  -v mydev-home:/home/dev
+
+# Create a server with multiple volumes (home + datasets)
+uv run devctl create --name ml-dev --flavor gpu-small \
+  -v mydev-home:/home/dev \
+  -v shared-datasets:/data:ro \
+  -v results:/outputs
 
 # List your servers
 uv run devctl list
 
-# Add a user
-uv run devctl user add --name test-user --public-key-file ~/.ssh/id_rsa.pub
-
-# Create a server with GPU support (see dev/eks/README.md for setup)
-uv run devctl create --name my-gpu-dev --flavor gpu-small --image fedora:latest
-
-# Delete a server
+# Delete a server (PVCs persist and can be reused)
 uv run devctl delete mydev
 ```
+
+## 💾 Storage and Volumes
+
+DevServers support Docker-style volume mounting for flexible storage management:
+
+### Ephemeral Storage (Default)
+
+By default, DevServers use ephemeral storage (emptyDir) at `/home/dev`. This is fast and suitable for temporary work, but data is lost when the DevServer is deleted.
+
+```bash
+uv run devctl create --name temp-dev --flavor cpu-small
+```
+
+### Persistent Storage
+
+Mount existing PVCs at custom paths using the `-v/--volume` flag:
+
+```bash
+# Single persistent volume at /home/dev
+uv run devctl create --name mydev --flavor cpu-small \
+  -v my-home-pvc:/home/dev
+
+# Multiple volumes for different purposes
+uv run devctl create --name ml-dev --flavor gpu-small \
+  -v alice-home:/home/dev \
+  -v shared-datasets:/data:ro \
+  -v results:/outputs
+```
+
+**Volume syntax:**
+- `PVC_NAME:/path` - Mount read-write
+- `PVC_NAME:/path:ro` - Mount read-only
+
+**Important:** PVCs are user-managed and NOT automatically deleted when a DevServer is deleted. This allows you to:
+- Preserve your work across DevServer recreations
+- Share datasets across multiple DevServers
+- Manage storage lifecycle independently
 
 ## 📚 Documentation
 

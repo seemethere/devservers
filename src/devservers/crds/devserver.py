@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 import json
 import shlex
 from typing import Any, Dict, List, Optional, Type, Union
@@ -11,14 +11,7 @@ from kubernetes.stream import stream
 from .base import BaseCustomResource, ObjectMeta
 from .const import CRD_GROUP, CRD_VERSION, CRD_PLURAL_DEVSERVER
 from .exec import ExecResult
-
-
-@dataclass
-class PersistentHomeSpec:
-    """A dataclass to represent the persistentHome field in the DevServer spec."""
-
-    enabled: bool
-    size: str = "10Gi"
+from ..utils.kube import get_pod_by_labels
 
 
 @dataclass
@@ -60,14 +53,15 @@ class DevServer(BaseCustomResource):
                     f"DevServer {self.metadata.name} did not become ready within {timeout} seconds."
                 )
         core_v1 = client.CoreV1Api(self.api.api_client)
-        pod_name = f"{self.metadata.name}-0"
 
         while time.time() - start < timeout:
             try:
-                pod = core_v1.read_namespaced_pod(
-                    name=pod_name, namespace=self.metadata.namespace
+                pod = get_pod_by_labels(
+                    core_v1,
+                    self.metadata.namespace,
+                    {"app": self.metadata.name}
                 )
-                if pod.status.container_statuses and all(
+                if pod and pod.status.container_statuses and all(
                     cs.ready for cs in pod.status.container_statuses
                 ):
                     return  # All containers are ready
@@ -77,31 +71,8 @@ class DevServer(BaseCustomResource):
             time.sleep(1)
 
         raise TimeoutError(
-            f"Pod {pod_name} did not become ready within {timeout} seconds."
+            f"Pod for DevServer {self.metadata.name} did not become ready within {timeout} seconds."
         )
-
-    @property
-    def persistent_home(self) -> Optional[PersistentHomeSpec]:
-        """
-        Provides typed access to the persistentHome spec.
-        Returns:
-            A PersistentHomeSpec object if persistentHome is defined in the spec,
-            otherwise None.
-        """
-        persistent_home_data = self.spec.get("persistentHome")
-        if persistent_home_data:
-            return PersistentHomeSpec(**persistent_home_data)
-        return None
-
-    @persistent_home.setter
-    def persistent_home(self, value: Optional[PersistentHomeSpec]) -> None:
-        """
-        Sets the persistentHome spec from a PersistentHomeSpec object.
-        """
-        if value:
-            self.spec["persistentHome"] = asdict(value)
-        elif "persistentHome" in self.spec:
-            del self.spec["persistentHome"]
 
     def exec(self, args: Union[str, List[str]], shell: bool = False) -> "ExecResult":
         """
@@ -118,7 +89,15 @@ class DevServer(BaseCustomResource):
         self.wait_for_ready(timeout=self.wait_timeout)
 
         core_v1 = client.CoreV1Api(self.api.api_client)
-        pod_name = f"{self.metadata.name}-0"
+        pod = get_pod_by_labels(
+            core_v1,
+            self.metadata.namespace,
+            {"app": self.metadata.name}
+        )
+        if not pod:
+            raise RuntimeError(f"No pod found for DevServer {self.metadata.name}")
+
+        pod_name = pod.metadata.name
 
         if shell:
             if not isinstance(args, str):
