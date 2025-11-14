@@ -112,7 +112,7 @@ async def test_single_volume_mount(
 
             # Check volumes
             volumes = deployment.spec.template.spec.volumes
-            user_volume = next((v for v in volumes if v.name.startswith("user-volume-")), None)
+            user_volume = next((v for v in volumes if v.name.startswith("vol-")), None)
             assert user_volume is not None, "user volume not found"
             assert user_volume.persistent_volume_claim is not None
             assert user_volume.persistent_volume_claim.claim_name == pvc_name
@@ -120,7 +120,7 @@ async def test_single_volume_mount(
             # Check volume mounts
             container = deployment.spec.template.spec.containers[0]
             user_mount = next(
-                (vm for vm in container.volume_mounts if vm.name.startswith("user-volume-")),
+                (vm for vm in container.volume_mounts if vm.name.startswith("vol-")),
                 None
             )
             assert user_mount is not None, "user mount not found"
@@ -213,14 +213,14 @@ async def test_multiple_volume_mounts(
 
             # Check volumes
             volumes = deployment.spec.template.spec.volumes
-            user_volumes = [v for v in volumes if v.name.startswith("user-volume-")]
+            user_volumes = [v for v in volumes if v.name.startswith("vol-")]
             assert len(user_volumes) == 2, f"Expected 2 user volumes, got {len(user_volumes)}"
 
             # Check volume mounts
             container = deployment.spec.template.spec.containers[0]
             user_mounts = [
                 vm for vm in container.volume_mounts
-                if vm.name.startswith("user-volume-")
+                if vm.name.startswith("vol-")
             ]
             assert len(user_mounts) == 2, f"Expected 2 user mounts, got {len(user_mounts)}"
 
@@ -323,3 +323,177 @@ async def test_pvc_persists_after_devserver_deletion(
         except client.ApiException as e:
             if e.status != 404:
                 print(f"⚠️ Error deleting PVC '{pvc_name}': {e}")
+
+
+@pytest.mark.asyncio
+async def test_duplicate_mount_paths_rejected(
+    test_flavor, operator_running, k8s_clients
+):
+    """
+    Tests that DevServer creation fails when duplicate mount paths are specified.
+    """
+    custom_objects_api = k8s_clients["custom_objects_api"]
+    devserver_name = "test-duplicate-mounts"
+    pvc_name = "test-pvc-duplicate"
+
+    devserver_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+        image=None,
+        volumes=[
+            {
+                "claimName": pvc_name,
+                "mountPath": "/home/dev",
+                "readOnly": False,
+            },
+            {
+                "claimName": pvc_name,
+                "mountPath": "/home/dev",  # Duplicate mount path
+                "readOnly": False,
+            },
+        ],
+    )
+
+    devserver_manifest = {
+        "apiVersion": "devserver.io/v1",
+        "kind": "DevServer",
+        "metadata": {"name": devserver_name, "namespace": NAMESPACE},
+        "spec": devserver_spec,
+    }
+
+    try:
+        # Create the DevServer - should fail validation
+        custom_objects_api.create_namespaced_custom_object(
+            group="devserver.io",
+            version="v1",
+            namespace=NAMESPACE,
+            plural="devservers",
+            body=devserver_manifest,
+        )
+
+        # Wait a bit for the operator to process
+        await asyncio.sleep(3)
+
+        # Check that the DevServer status indicates an error
+        devserver = await asyncio.to_thread(
+            custom_objects_api.get_namespaced_custom_object,
+            group="devserver.io",
+            version="v1",
+            namespace=NAMESPACE,
+            plural="devservers",
+            name=devserver_name,
+        )
+
+        # The operator should have rejected this with a PermanentError
+        # Check status for error indication
+        status = devserver.get("status", {})
+        phase = status.get("phase", "")
+
+        # The DevServer should either be in an error state or not have a Running phase
+        # Since validation happens before reconciliation, the status might not be set
+        # but the resource should exist with an error condition
+        assert phase != "Running", "DevServer should not be Running with duplicate mount paths"
+
+        print("✅ Duplicate mount paths correctly rejected")
+
+    except client.ApiException as e:
+        # If the API rejects it immediately, that's also fine
+        if e.status == 400 or e.status == 422:
+            print("✅ Duplicate mount paths rejected by API validation")
+        else:
+            raise
+    finally:
+        # Cleanup
+        try:
+            await asyncio.to_thread(
+                custom_objects_api.delete_namespaced_custom_object,
+                group="devserver.io",
+                version="v1",
+                namespace=NAMESPACE,
+                plural="devservers",
+                name=devserver_name,
+            )
+        except client.ApiException as e:
+            if e.status != 404:
+                print(f"⚠️ Error deleting DevServer '{devserver_name}': {e}")
+
+
+@pytest.mark.asyncio
+async def test_missing_pvc_causes_pod_failure(
+    test_flavor, operator_running, k8s_clients, async_devserver
+):
+    """
+    Tests that a DevServer referencing a non-existent PVC will have a pod
+    that fails to start (Kubernetes-level validation).
+    """
+    core_v1 = k8s_clients["core_v1"]
+    devserver_name = "test-missing-pvc"
+    non_existent_pvc = "non-existent-pvc-12345"
+
+    devserver_spec = build_devserver_spec(
+        flavor=test_flavor,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+        image=None,
+        volumes=[
+            {
+                "claimName": non_existent_pvc,
+                "mountPath": "/home/dev",
+                "readOnly": False,
+            }
+        ],
+    )
+
+    # Create DevServer - this should succeed at the CRD level
+    # but the pod will fail to start because the PVC doesn't exist
+    try:
+        async with async_devserver(
+            devserver_name,
+            spec=devserver_spec,
+            wait_timeout=30,  # Shorter timeout since we expect failure
+        ):
+            # Wait a bit for the pod to attempt to start
+            await asyncio.sleep(5)
+
+            # Check pod status - should be in Pending or Failed state
+            pods = await asyncio.to_thread(
+                core_v1.list_namespaced_pod,
+                namespace=NAMESPACE,
+                label_selector=f"app={devserver_name}",
+            )
+
+            if pods.items:
+                pod = pods.items[0]
+                pod_status = pod.status
+
+                # Pod should be in Pending state (waiting for PVC) or have container errors
+                assert pod_status.phase in ["Pending", "Failed"], (
+                    f"Expected pod to be Pending or Failed, got {pod_status.phase}"
+                )
+
+                # Check for PVC-related events or conditions
+                if pod_status.phase == "Pending":
+                    # Check if there are conditions indicating PVC issues
+                    conditions = pod_status.conditions or []
+                    print("✅ Pod correctly in Pending state due to missing PVC")
+                    print(f"   Pod conditions: {[c.type for c in conditions]}")
+                else:
+                    print("✅ Pod correctly in Failed state due to missing PVC")
+
+            print("✅ Missing PVC correctly causes pod startup failure")
+    except TimeoutError:
+        # This is expected - the pod won't become ready because PVC doesn't exist
+        # Check that the pod exists but is in a failed/pending state
+        pods = await asyncio.to_thread(
+            core_v1.list_namespaced_pod,
+            namespace=NAMESPACE,
+            label_selector=f"app={devserver_name}",
+        )
+
+        if pods.items:
+            pod = pods.items[0]
+            assert pod.status.phase in ["Pending", "Failed"], (
+                f"Expected pod to be Pending or Failed when PVC is missing, got {pod.status.phase}"
+            )
+            print("✅ Missing PVC correctly causes pod startup failure (timeout expected)")

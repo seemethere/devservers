@@ -14,12 +14,12 @@ The operator introduces two Custom Resource Definitions (CRDs):
 
 When a `DevServer` resource is created or updated, the operator provisions the necessary Kubernetes objects to run the development environment, including:
 
--   A `StatefulSet` to manage the pod.
+-   A `Deployment` to manage the pod.
 -   `Services` for network access (including SSH).
 -   A `Secret` for SSH host keys. The operator will automatically generate this secret if it doesn't exist.
 -   A `ConfigMap` for the SSH daemon configuration, which includes a custom message of the day (motd) and allows SSH agent forwarding.
 
-The operator watches for changes to `DevServer` resources and will automatically apply updates. For example, changing the `image` in a `DevServer`'s `spec` will cause the operator to update the `StatefulSet` to roll out a new pod with the new image.
+The operator watches for changes to `DevServer` resources and will automatically apply updates. For example, changing the `image` in a `DevServer`'s `spec` will cause the operator to update the `Deployment` to roll out a new pod with the new image.
 
 ### Container Startup Script
 

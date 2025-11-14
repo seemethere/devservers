@@ -5,7 +5,7 @@ from typing import Any, Dict
 import kopf
 from kubernetes import client
 
-from .validation import validate_and_normalize_ttl
+from .validation import validate_and_normalize_ttl, validate_volumes
 from .host_keys import ensure_host_keys_secret
 from .reconciler import reconcile_devserver
 from ..config import config as operator_config
@@ -43,6 +43,10 @@ async def create_or_update_devserver(
     # Step 1: Validate TTL
     ttl_str = spec.get("lifecycle", {}).get("timeToLive")
     validate_and_normalize_ttl(ttl_str, logger)
+
+    # Step 1b: Validate volumes
+    volumes = spec.get("volumes")
+    validate_volumes(volumes, logger)
 
     # Step 2: Get the DevServerFlavor
     custom_objects_api = client.CustomObjectsApi()

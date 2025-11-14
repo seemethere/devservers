@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict
 
 
@@ -149,13 +150,19 @@ def build_deployment(
         # Remove the default home mount since we'll add user-specified volumes
         volume_mounts[:] = [vm for vm in volume_mounts if vm.get("name") != "home"]
 
-        for idx, volume in enumerate(user_volumes):
+        for volume in user_volumes:
             claim_name = volume["claimName"]
             mount_path = volume["mountPath"]
             read_only = volume.get("readOnly", False)
 
-            # Generate unique volume name for each mount
-            volume_name = f"user-volume-{idx}"
+            # Generate stable volume name based on claimName and mountPath
+            # Sanitize mount_path to create a valid Kubernetes volume name
+            # Replace slashes and other invalid chars with hyphens
+            sanitized_path = re.sub(r'[^a-z0-9-]', '-', mount_path.lower().strip('/'))
+            # Remove leading/trailing hyphens and collapse multiple hyphens
+            sanitized_path = re.sub(r'-+', '-', sanitized_path).strip('-')
+            # Combine claim name and path for uniqueness
+            volume_name = f"vol-{claim_name}-{sanitized_path}"[:63]  # Kubernetes name limit
 
             # Add to volumes list
             volumes.append({

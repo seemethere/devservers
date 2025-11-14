@@ -44,14 +44,14 @@ def test_devserver_missing_flavor_error(
 
         time.sleep(2)  # Give operator time to process
 
-        # Verify that no statefulset was created due to the error
+        # Verify that no deployment was created due to the error
         with pytest.raises(client.ApiException) as exc_info:
-            apps_v1.read_namespaced_stateful_set(
+            apps_v1.read_namespaced_deployment(
                 name=devserver_name, namespace=NAMESPACE
             )
         assert isinstance(exc_info.value, client.ApiException)
         assert exc_info.value.status == 404, (
-            "StatefulSet should not exist for invalid flavor"
+            "Deployment should not exist for invalid flavor"
         )
 
     finally:
