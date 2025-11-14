@@ -133,9 +133,15 @@ def build_deployment(
     assert isinstance(volumes, list)
 
     # Docker-style volume mounting
+    flavor_volumes = flavor["spec"].get("volumes", [])
     user_volumes = spec.get("volumes", [])
 
-    if not user_volumes:
+    # Merge volumes, user_volumes override flavor_volumes on mountPath conflict
+    merged_volumes = {v["mountPath"]: v for v in flavor_volumes}
+    merged_volumes.update({v["mountPath"]: v for v in user_volumes})
+    final_volumes = list(merged_volumes.values())
+
+    if not final_volumes:
         # No volumes specified: mount emptyDir at /home/dev (ephemeral)
         volumes.append({"name": "home", "emptyDir": {}})
     else:
@@ -150,7 +156,7 @@ def build_deployment(
         # Remove the default home mount since we'll add user-specified volumes
         volume_mounts[:] = [vm for vm in volume_mounts if vm.get("name") != "home"]
 
-        for volume in user_volumes:
+        for volume in final_volumes:
             claim_name = volume["claimName"]
             mount_path = volume["mountPath"]
             read_only = volume.get("readOnly", False)

@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from kubernetes import client
+from contextlib import asynccontextmanager
 from tests.conftest import TEST_NAMESPACE
 from tests.helpers import (
     build_devserver_spec,
@@ -10,6 +11,69 @@ from tests.helpers import (
 
 # Constants from the main test file
 NAMESPACE = TEST_NAMESPACE
+
+
+@asynccontextmanager
+async def _managed_pvc(core_v1_api: client.CoreV1Api, namespace: str, name: str):
+    """Creates a PVC for a test and ensures it's cleaned up."""
+    pvc_manifest = client.V1PersistentVolumeClaim(
+        metadata=client.V1ObjectMeta(name=name, namespace=namespace),
+        spec=client.V1PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            resources=client.V1ResourceRequirements(requests={"storage": "1Gi"}),
+        ),
+    )
+    await asyncio.to_thread(
+        core_v1_api.create_namespaced_persistent_volume_claim,
+        namespace=namespace,
+        body=pvc_manifest,
+    )
+    try:
+        yield name
+    finally:
+        try:
+            await asyncio.to_thread(
+                core_v1_api.delete_namespaced_persistent_volume_claim,
+                name=name,
+                namespace=namespace,
+            )
+        except client.ApiException as e:
+            if e.status != 404:
+                print(f"⚠️ Error deleting PVC '{name}': {e}")
+
+
+@asynccontextmanager
+async def _managed_flavor(
+    custom_objects_api: client.CustomObjectsApi, name: str, spec: dict
+):
+    """Creates a DevServerFlavor for a test and ensures it's cleaned up."""
+    flavor_manifest = {
+        "apiVersion": "devserver.io/v1",
+        "kind": "DevServerFlavor",
+        "metadata": {"name": name},
+        "spec": spec,
+    }
+    await asyncio.to_thread(
+        custom_objects_api.create_cluster_custom_object,
+        group="devserver.io",
+        version="v1",
+        plural="devserverflavors",
+        body=flavor_manifest,
+    )
+    try:
+        yield name
+    finally:
+        try:
+            await asyncio.to_thread(
+                custom_objects_api.delete_cluster_custom_object,
+                group="devserver.io",
+                version="v1",
+                plural="devserverflavors",
+                name=name,
+            )
+        except client.ApiException as e:
+            if e.status != 404:
+                print(f"⚠️ Error deleting flavor '{name}': {e}")
 
 
 @pytest.mark.asyncio
@@ -497,3 +561,178 @@ async def test_missing_pvc_causes_pod_failure(
                 f"Expected pod to be Pending or Failed when PVC is missing, got {pod.status.phase}"
             )
             print("✅ Missing PVC correctly causes pod startup failure (timeout expected)")
+
+
+@pytest.mark.asyncio
+async def test_flavor_with_volume_mounts(
+    operator_running, k8s_clients, async_devserver
+):
+    """
+    Tests that a DevServer correctly mounts a volume defined in its flavor.
+    """
+    apps_v1 = k8s_clients["apps_v1"]
+    core_v1 = k8s_clients["core_v1"]
+    custom_objects_api = k8s_clients["custom_objects_api"]
+
+    flavor_name = "test-flavor-with-volume"
+    pvc_name = "test-pvc-flavor"
+    devserver_name = "test-devserver-flavor-volume"
+
+    flavor_spec = {
+        "resources": {
+            "requests": {"cpu": "100m", "memory": "128Mi"},
+            "limits": {"cpu": "200m", "memory": "256Mi"},
+        },
+        "volumes": [
+            {"claimName": pvc_name, "mountPath": "/data", "readOnly": False}
+        ],
+    }
+    devserver_spec = build_devserver_spec(
+        flavor=flavor_name,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+    )
+
+    async with _managed_pvc(core_v1, NAMESPACE, pvc_name):
+        async with _managed_flavor(custom_objects_api, flavor_name, flavor_spec):
+            async with async_devserver(devserver_name, spec=devserver_spec):
+                deployment = await wait_for_deployment_to_exist(
+                    apps_v1, name=devserver_name, namespace=NAMESPACE
+                )
+                assert deployment is not None
+
+                # Check for the volume from the flavor
+                volumes = deployment.spec.template.spec.volumes
+                flavor_volume = next(
+                    (v for v in volumes if v.name.startswith("vol-")), None
+                )
+                assert flavor_volume is not None
+                assert flavor_volume.persistent_volume_claim.claim_name == pvc_name
+
+                # Check for the volume mount
+                container = deployment.spec.template.spec.containers[0]
+                flavor_mount = next(
+                    (vm for vm in container.volume_mounts if vm.name.startswith("vol-")),
+                    None,
+                )
+                assert flavor_mount is not None
+                assert flavor_mount.mount_path == "/data"
+                print(f"✅ DevServer correctly mounted volume from flavor '{flavor_name}'")
+
+
+@pytest.mark.asyncio
+async def test_flavor_and_devserver_volumes_merge(
+    operator_running, k8s_clients, async_devserver
+):
+    """
+    Tests that volumes from a flavor and a devserver spec are merged correctly.
+    """
+    apps_v1 = k8s_clients["apps_v1"]
+    core_v1 = k8s_clients["core_v1"]
+    custom_objects_api = k8s_clients["custom_objects_api"]
+
+    flavor_name = "test-flavor-merge"
+    pvc_flavor = "test-pvc-flavor-merge"
+    pvc_devserver = "test-pvc-devserver-merge"
+    devserver_name = "test-devserver-merge-volume"
+
+    flavor_spec = {
+        "resources": {
+            "requests": {"cpu": "100m", "memory": "128Mi"},
+        },
+        "volumes": [{"claimName": pvc_flavor, "mountPath": "/data"}],
+    }
+    devserver_spec = build_devserver_spec(
+        flavor=flavor_name,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+        volumes=[{"claimName": pvc_devserver, "mountPath": "/home/dev"}],
+    )
+
+    async with _managed_pvc(core_v1, NAMESPACE, pvc_flavor), _managed_pvc(
+        core_v1, NAMESPACE, pvc_devserver
+    ):
+        async with _managed_flavor(custom_objects_api, flavor_name, flavor_spec):
+            async with async_devserver(devserver_name, spec=devserver_spec):
+                deployment = await wait_for_deployment_to_exist(
+                    apps_v1, name=devserver_name, namespace=NAMESPACE
+                )
+                assert deployment is not None
+
+                # Check that both volumes are present
+                volumes = deployment.spec.template.spec.volumes
+                pvc_claims = {
+                    v.persistent_volume_claim.claim_name
+                    for v in volumes
+                    if v.persistent_volume_claim
+                }
+                assert pvc_claims == {pvc_flavor, pvc_devserver}
+
+                # Check that both mounts are present
+                container = deployment.spec.template.spec.containers[0]
+                mount_paths = {vm.mount_path for vm in container.volume_mounts}
+                assert "/data" in mount_paths
+                assert "/home/dev" in mount_paths
+                print("✅ DevServer and flavor volumes correctly merged")
+
+
+@pytest.mark.asyncio
+async def test_devserver_volume_overrides_flavor(
+    operator_running, k8s_clients, async_devserver
+):
+    """
+    Tests that a devserver's volume spec overrides a flavor's on mountPath conflict.
+    """
+    apps_v1 = k8s_clients["apps_v1"]
+    core_v1 = k8s_clients["core_v1"]
+    custom_objects_api = k8s_clients["custom_objects_api"]
+
+    flavor_name = "test-flavor-override"
+    pvc_flavor = "test-pvc-flavor-override"
+    pvc_devserver = "test-pvc-devserver-override"
+    devserver_name = "test-devserver-override-volume"
+    mount_path = "/home/dev"
+
+    flavor_spec = {
+        "resources": {"requests": {"cpu": "100m"}},
+        "volumes": [{"claimName": pvc_flavor, "mountPath": mount_path}],
+    }
+    devserver_spec = build_devserver_spec(
+        flavor=flavor_name,
+        public_key="ssh-rsa AAAA...",
+        ttl="1h",
+        volumes=[{"claimName": pvc_devserver, "mountPath": mount_path}],
+    )
+
+    async with _managed_pvc(core_v1, NAMESPACE, pvc_flavor), _managed_pvc(
+        core_v1, NAMESPACE, pvc_devserver
+    ):
+        async with _managed_flavor(custom_objects_api, flavor_name, flavor_spec):
+            async with async_devserver(devserver_name, spec=devserver_spec):
+                deployment = await wait_for_deployment_to_exist(
+                    apps_v1, name=devserver_name, namespace=NAMESPACE
+                )
+                assert deployment is not None
+
+                # Check that only the devserver's PVC is mounted
+                volumes = deployment.spec.template.spec.volumes
+                pvc_claims = {
+                    v.persistent_volume_claim.claim_name
+                    for v in volumes
+                    if v.persistent_volume_claim
+                }
+                assert pvc_claims == {pvc_devserver}
+
+                # Check that the mount path is correct and points to the devserver's PVC
+                container = deployment.spec.template.spec.containers[0]
+                home_mount = next(
+                    (vm for vm in container.volume_mounts if vm.mount_path == mount_path),
+                    None,
+                )
+                assert home_mount is not None
+
+                mounted_volume = next(
+                    (v for v in volumes if v.name == home_mount.name), None
+                )
+                assert mounted_volume.persistent_volume_claim.claim_name == pvc_devserver
+                print("✅ DevServer volume correctly overrode flavor volume")
