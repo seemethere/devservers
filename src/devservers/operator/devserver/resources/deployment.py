@@ -1,3 +1,4 @@
+import hashlib
 import re
 from typing import Any, Dict
 
@@ -132,7 +133,28 @@ def build_deployment(
     volumes = pod_spec.get("volumes")
     assert isinstance(volumes, list)
 
-    # Docker-style volume mounting
+    def _sanitize(value: str) -> str:
+        sanitized = re.sub(r"[^a-z0-9-]", "-", value.lower())
+        return re.sub(r"-+", "-", sanitized).strip("-")
+
+    def _stable_volume_name(claim_name: str, mount_path: str) -> str:
+        sanitized_path = re.sub(r"[^a-z0-9-]", "-", mount_path.lower().strip("/"))
+        sanitized_path = re.sub(r"-+", "-", sanitized_path).strip("-")
+        raw_name = f"vol-{claim_name}"
+        if sanitized_path:
+            raw_name = f"{raw_name}-{sanitized_path}"
+
+        sanitized = _sanitize(raw_name) or "vol"
+        if len(sanitized) <= 63:
+            return sanitized
+
+        hash_suffix = hashlib.sha1(raw_name.encode()).hexdigest()[:6]
+        trim_len = max(1, 63 - len(hash_suffix) - 1)
+        prefix = sanitized[:trim_len].rstrip("-")
+        if not prefix:
+            prefix = sanitized[:trim_len]
+        return f"{prefix}-{hash_suffix}"
+
     flavor_volumes = flavor["spec"].get("volumes", [])
     user_volumes = spec.get("volumes", [])
 
@@ -141,10 +163,16 @@ def build_deployment(
     merged_volumes.update({v["mountPath"]: v for v in user_volumes})
     final_volumes = list(merged_volumes.values())
 
-    if not final_volumes:
-        # No volumes specified: mount emptyDir at /home/dev (ephemeral)
+    home_mount_path = "/home/dev"
+    home_volume_specified = any(
+        v.get("mountPath") == home_mount_path for v in final_volumes
+    )
+
+    if not final_volumes or not home_volume_specified:
+        # Ensure there's always writable storage at /home/dev unless overridden.
         volumes.append({"name": "home", "emptyDir": {}})
-    else:
+
+    if final_volumes:
         # User specified volumes: mount each PVC
         containers = pod_spec.get("containers")
         assert isinstance(containers, list)
@@ -153,22 +181,17 @@ def build_deployment(
         volume_mounts = container.get("volumeMounts")
         assert isinstance(volume_mounts, list)
 
-        # Remove the default home mount since we'll add user-specified volumes
-        volume_mounts[:] = [vm for vm in volume_mounts if vm.get("name") != "home"]
+        if home_volume_specified:
+            # Remove the default home mount since a PVC will replace it.
+            volume_mounts[:] = [
+                vm for vm in volume_mounts if vm.get("name") != "home"
+            ]
 
         for volume in final_volumes:
             claim_name = volume["claimName"]
             mount_path = volume["mountPath"]
             read_only = volume.get("readOnly", False)
-
-            # Generate stable volume name based on claimName and mountPath
-            # Sanitize mount_path to create a valid Kubernetes volume name
-            # Replace slashes and other invalid chars with hyphens
-            sanitized_path = re.sub(r'[^a-z0-9-]', '-', mount_path.lower().strip('/'))
-            # Remove leading/trailing hyphens and collapse multiple hyphens
-            sanitized_path = re.sub(r'-+', '-', sanitized_path).strip('-')
-            # Combine claim name and path for uniqueness
-            volume_name = f"vol-{claim_name}-{sanitized_path}"[:63]  # Kubernetes name limit
+            volume_name = _stable_volume_name(claim_name, mount_path)
 
             # Add to volumes list
             volumes.append({

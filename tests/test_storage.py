@@ -619,6 +619,20 @@ async def test_flavor_with_volume_mounts(
                 assert flavor_mount.mount_path == "/data"
                 print(f"✅ DevServer correctly mounted volume from flavor '{flavor_name}'")
 
+                # Ensure /home/dev is still backed by emptyDir when not overridden
+                home_volume = next(
+                    (v for v in deployment.spec.template.spec.volumes if v.name == "home"),
+                    None,
+                )
+                assert home_volume is not None
+                assert home_volume.empty_dir is not None
+                home_mount = next(
+                    (vm for vm in container.volume_mounts if vm.mount_path == "/home/dev"),
+                    None,
+                )
+                assert home_mount is not None
+                assert home_mount.name == "home"
+
 
 @pytest.mark.asyncio
 async def test_flavor_and_devserver_volumes_merge(
