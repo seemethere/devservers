@@ -15,8 +15,8 @@ from tests.conftest import TEST_NAMESPACE
 from tests.helpers import (
     build_devserver_spec,
     wait_for_devserver_status,
-    wait_for_statefulset_to_be_deleted,
-    wait_for_statefulset_to_exist,
+    wait_for_deployment_to_be_deleted,
+    wait_for_deployment_to_exist,
 )
 
 # Constants from the main test file
@@ -25,18 +25,18 @@ TEST_DEVSERVER_NAME = "test-devserver"
 
 
 @pytest.mark.asyncio
-async def test_devserver_creates_statefulset(
+async def test_devserver_creates_deployment(
     test_flavor, operator_running, k8s_clients, async_devserver
 ):
     """
     Tests if creating a DevServer resource leads to the creation of a
-    corresponding StatefulSet. This is the core reconciliation test with
+    corresponding Deployment. This is the core reconciliation test with
     the actual operator running.
     """
     apps_v1 = k8s_clients["apps_v1"]
     custom_objects_api = k8s_clients["custom_objects_api"]
 
-    print(f"🧪 Starting test_devserver_creates_statefulset in namespace: {NAMESPACE}")
+    print(f"🧪 Starting test_devserver_creates_deployment in namespace: {NAMESPACE}")
 
     devserver_spec = build_devserver_spec(
         flavor=test_flavor,
@@ -49,18 +49,18 @@ async def test_devserver_creates_statefulset(
         TEST_DEVSERVER_NAME,
         spec=devserver_spec,
     ):
-        # 2. Wait and check for the corresponding StatefulSet
-        statefulset = await wait_for_statefulset_to_exist(
+        # 2. Wait and check for the corresponding Deployment
+        deployment = await wait_for_deployment_to_exist(
             apps_v1, name=TEST_DEVSERVER_NAME, namespace=NAMESPACE
         )
 
-        # 3. Assert that the statefulset was found and has correct properties
-        assert statefulset is not None, (
-            f"StatefulSet '{TEST_DEVSERVER_NAME}' not created by operator."
+        # 3. Assert that the deployment was found and has correct properties
+        assert deployment is not None, (
+            f"Deployment '{TEST_DEVSERVER_NAME}' not created by operator."
         )
-        assert statefulset.spec.template.spec.containers[0].image == "ubuntu:22.04"
+        assert deployment.spec.template.spec.containers[0].image == "ubuntu:22.04"
 
-        container = statefulset.spec.template.spec.containers[0]
+        container = deployment.spec.template.spec.containers[0]
         assert container.resources.requests["cpu"] == "100m"
         assert "/devserver/startup.sh" in container.args[0]
 
@@ -72,8 +72,8 @@ async def test_devserver_creates_statefulset(
             expected_status="Running",
         )
 
-    # 4. Wait and check for the corresponding StatefulSet to be deleted
-    await wait_for_statefulset_to_be_deleted(
+    # 4. Wait and check for the corresponding Deployment to be deleted
+    await wait_for_deployment_to_be_deleted(
         apps_v1, name=TEST_DEVSERVER_NAME, namespace=NAMESPACE
     )
 
@@ -84,7 +84,7 @@ async def test_devserver_update_changes_image(
 ):
     """
     Tests if updating a DevServer's spec.image triggers the operator to
-    update the underlying StatefulSet's container image.
+    update the underlying Deployment's container image.
     """
     apps_v1 = k8s_clients["apps_v1"]
     devserver_name = f"test-update-{uuid.uuid4().hex[:6]}"
@@ -103,36 +103,36 @@ async def test_devserver_update_changes_image(
         devserver_name,
         spec=initial_spec,
     ) as devserver:
-        # 3. Wait for the StatefulSet and verify the initial image
-        statefulset = await wait_for_statefulset_to_exist(
+        # 3. Wait for the Deployment and verify the initial image
+        deployment = await wait_for_deployment_to_exist(
             apps_v1, name=devserver_name, namespace=NAMESPACE
         )
-        assert statefulset.spec.template.spec.containers[0].image == initial_image
+        assert deployment.spec.template.spec.containers[0].image == initial_image
 
         # 4. Update the spec via the DevServer helper (use patch to avoid resourceVersion issues).
         await asyncio.to_thread(devserver.patch, {"spec": {"image": updated_image}})
 
-        # 5. Poll the StatefulSet until the image is updated
+        # 5. Poll the Deployment until the image is updated
         for _ in range(30):  # Poll for up to 60 seconds
             await asyncio.sleep(2)
-            updated_sts = await asyncio.to_thread(
-                apps_v1.read_namespaced_stateful_set,
+            updated_deploy = await asyncio.to_thread(
+                apps_v1.read_namespaced_deployment,
                 name=devserver_name,
                 namespace=NAMESPACE,
             )
-            if updated_sts.spec.template.spec.containers[0].image == updated_image:
+            if updated_deploy.spec.template.spec.containers[0].image == updated_image:
                 break
         else:
-            pytest.fail("StatefulSet image was not updated in time.")
+            pytest.fail("Deployment image was not updated in time.")
 
         # 6. Final assertion to be sure
-        final_sts = await asyncio.to_thread(
-            apps_v1.read_namespaced_stateful_set, name=devserver_name, namespace=NAMESPACE
+        final_deploy = await asyncio.to_thread(
+            apps_v1.read_namespaced_deployment, name=devserver_name, namespace=NAMESPACE
         )
-        assert final_sts.spec.template.spec.containers[0].image == updated_image
+        assert final_deploy.spec.template.spec.containers[0].image == updated_image
 
-    # 7. Ensure StatefulSet cleanup
-    await wait_for_statefulset_to_be_deleted(
+    # 7. Ensure Deployment cleanup
+    await wait_for_deployment_to_be_deleted(
         apps_v1, name=devserver_name, namespace=NAMESPACE
     )
 
@@ -179,25 +179,25 @@ async def test_multiple_devservers(
             )
             await stack.enter_async_context(ctx)
 
-        # Wait for all statefulsets to be created and verify images
+        # Wait for all deployments to be created and verify images
         for _ in range(30):
             await asyncio.sleep(1)
             try:
-                sts1 = await asyncio.to_thread(
-                    apps_v1.read_namespaced_stateful_set,
+                deploy1 = await asyncio.to_thread(
+                    apps_v1.read_namespaced_deployment,
                     name=devserver_names[0],
                     namespace=NAMESPACE,
                 )
-                sts2 = await asyncio.to_thread(
-                    apps_v1.read_namespaced_stateful_set,
+                deploy2 = await asyncio.to_thread(
+                    apps_v1.read_namespaced_deployment,
                     name=devserver_names[1],
                     namespace=NAMESPACE,
                 )
 
                 # Once both are found, verify images and break
-                assert sts1.spec.template.spec.containers[0].image == "fedora:38"
+                assert deploy1.spec.template.spec.containers[0].image == "fedora:38"
                 assert (
-                    sts2.spec.template.spec.containers[0].image
+                    deploy2.spec.template.spec.containers[0].image
                     == DEFAULT_DEVSERVER_IMAGE
                 )  # Verify default
                 break
@@ -205,10 +205,10 @@ async def test_multiple_devservers(
                 if e.status != 404:
                     raise
         else:
-            pytest.fail("Not all StatefulSets were created and ready in time.")
+            pytest.fail("Not all Deployments were created and ready in time.")
 
     for name in devserver_names:
-        await wait_for_statefulset_to_be_deleted(
+        await wait_for_deployment_to_be_deleted(
             apps_v1, name=name, namespace=NAMESPACE
         )
 
@@ -237,8 +237,8 @@ async def test_devserver_expires_after_ttl(
         devserver_name,
         spec=devserver_spec,
     ):
-        # 1. Verify StatefulSet is created
-        await wait_for_statefulset_to_exist(
+        # 1. Verify Deployment is created
+        await wait_for_deployment_to_exist(
             apps_v1, name=devserver_name, namespace=NAMESPACE
         )
 

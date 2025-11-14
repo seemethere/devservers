@@ -1,0 +1,41 @@
+# Example: DevServer with persistent volume for home directory
+#
+# This example demonstrates how to create a DevServer with a persistent
+# volume mounted at /home/dev. The PVC is created separately and managed
+# by the user, giving full control over storage lifecycle.
+
+# Step 1: Create a PersistentVolumeClaim
+# kubectl apply -f - <<EOF
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: alice-home
+#   namespace: default
+# spec:
+#   accessModes:
+#     - ReadWriteOnce
+#   resources:
+#     requests:
+#       storage: 20Gi
+# EOF
+
+# Step 2: Create the DevServer that uses the PVC
+apiVersion: devserver.io/v1
+kind: DevServer
+metadata:
+  name: alice-dev
+  namespace: default
+spec:
+  flavor: gpu-small
+  image: pytorch/pytorch:latest
+  ssh:
+    publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." # Replace with your SSH public key
+  lifecycle:
+    timeToLive: "8h"
+  enableSSH: true
+
+  # Docker-style volume mounting
+  volumes:
+    - claimName: alice-home
+      mountPath: /home/dev
+      readOnly: false

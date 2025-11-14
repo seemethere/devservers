@@ -77,10 +77,11 @@ def main(ctx, config_path, assume_yes) -> None:
     help="Wait for the DevServer to be ready.",
 )
 @click.option(
-    "--persistent-home-size",
-    type=str,
-    default="10Gi",
-    help="The size of the persistent home directory.",
+    "-v",
+    "--volume",
+    "volumes",
+    multiple=True,
+    help="Mount volume (format: PVC_NAME:/path or PVC_NAME:/path:ro). Can be specified multiple times.",
 )
 @click.pass_context
 def create(
@@ -91,7 +92,7 @@ def create(
     ssh_public_key_file: str,
     time_to_live: str,
     wait: bool,
-    persistent_home_size: str,
+    volumes: tuple[str, ...],
 ) -> None:
     """Create a new DevServer."""
     handlers.create_devserver(
@@ -102,7 +103,7 @@ def create(
         ssh_public_key_file=ssh_public_key_file,
         time_to_live=time_to_live,
         wait=wait,
-        persistent_home_size=persistent_home_size,
+        volumes=volumes,
     )
 
 

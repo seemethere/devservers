@@ -212,7 +212,35 @@ def apply_crds():
     # Teardown: Delete test namespace and CRDs after all tests in the session are done
     print("🧹 Cleaning up test resources...")
 
-    # Delete test namespace first (this will delete all namespaced resources)
+    # First, explicitly delete all DevServers to trigger operator cleanup
+    try:
+        custom_objects_api = client.CustomObjectsApi()
+        devservers = custom_objects_api.list_namespaced_custom_object(
+            group=CRD_GROUP,
+            version=CRD_VERSION,
+            namespace=TEST_NAMESPACE,
+            plural=CRD_PLURAL_DEVSERVER,
+        )
+        if devservers.get("items"):
+            print(f"🧹 Deleting {len(devservers['items'])} DevServers...")
+            for ds in devservers["items"]:
+                try:
+                    custom_objects_api.delete_namespaced_custom_object(
+                        group=CRD_GROUP,
+                        version=CRD_VERSION,
+                        namespace=TEST_NAMESPACE,
+                        plural=CRD_PLURAL_DEVSERVER,
+                        name=ds["metadata"]["name"],
+                    )
+                except client.ApiException:
+                    pass  # Ignore errors during cleanup
+            # Give operator time to process deletions
+            time.sleep(2)
+            print("✅ DevServers deletion initiated")
+    except Exception as e:
+        print(f"⚠️ Error during DevServer cleanup: {e}")
+
+    # Delete test namespace (this will delete all remaining namespaced resources)
     try:
         core_v1.delete_namespace(name=TEST_NAMESPACE)
         print(f"✅ Deleted test namespace: {TEST_NAMESPACE}")

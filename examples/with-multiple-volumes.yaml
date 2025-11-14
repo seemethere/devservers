@@ -1,0 +1,68 @@
+# Example: DevServer with multiple volumes (home + datasets)
+#
+# This example demonstrates how to mount multiple PVCs at different paths,
+# useful for ML workloads where you need separate volumes for home directory,
+# datasets, and output results.
+
+# Prerequisites: Create PVCs first
+# kubectl apply -f - <<EOF
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: alice-home
+#   namespace: default
+# spec:
+#   accessModes: [ReadWriteOnce]
+#   resources:
+#     requests:
+#       storage: 20Gi
+# ---
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: shared-datasets
+#   namespace: default
+# spec:
+#   accessModes: [ReadOnlyMany]
+#   resources:
+#     requests:
+#       storage: 100Gi
+# ---
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: results-output
+#   namespace: default
+# spec:
+#   accessModes: [ReadWriteOnce]
+#   resources:
+#     requests:
+#       storage: 50Gi
+# EOF
+
+# DevServer with multiple volumes
+apiVersion: devserver.io/v1
+kind: DevServer
+metadata:
+  name: alice-ml-dev
+  namespace: default
+spec:
+  flavor: gpu-small
+  image: pytorch/pytorch:latest
+  ssh:
+    publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." # Replace with your SSH public key
+  lifecycle:
+    timeToLive: "8h"
+  enableSSH: true
+
+  # Multiple volumes at different paths
+  volumes:
+    - claimName: alice-home
+      mountPath: /home/dev
+      readOnly: false
+    - claimName: shared-datasets
+      mountPath: /data
+      readOnly: true  # Read-only mount for shared data
+    - claimName: results-output
+      mountPath: /outputs
+      readOnly: false

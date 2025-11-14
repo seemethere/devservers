@@ -6,3 +6,16 @@ metadata:
 spec:
   flavor: cpu-small
   image: ubuntu:22.04
+  ssh:
+    publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." # Replace with your SSH public key
+  lifecycle:
+    timeToLive: "4h"
+  enableSSH: true
+  # Optional: Mount persistent volumes (Docker-style)
+  # volumes:
+  #   - claimName: my-home-pvc
+  #     mountPath: /home/dev
+  #     readOnly: false
+  #   - claimName: shared-data-pvc
+  #     mountPath: /data
+  #     readOnly: true

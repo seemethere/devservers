@@ -6,7 +6,6 @@ import yaml
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = "/etc/devserver-operator/config.yaml"
-DEFAULT_PERSISTENT_HOME_SIZE = "10Gi"
 DEFAULT_EXPIRATION_INTERVAL = 60
 DEFAULT_FLAVOR_RECONCILIATION_INTERVAL = 60
 DEFAULT_WORKER_LIMIT = 1
@@ -25,11 +24,6 @@ class OperatorConfig:
         def get_bool(value):
             return str(value).lower() in ("true", "1", "t")
 
-        self.default_persistent_home_size = self._get_value(
-            "DEVSERVER_DEFAULT_PERSISTENT_HOME_SIZE",
-            "defaultPersistentHomeSize",
-            DEFAULT_PERSISTENT_HOME_SIZE,
-        )
         self.expiration_interval = self._get_value(
             "DEVSERVER_EXPIRATION_INTERVAL",
             "expirationInterval",

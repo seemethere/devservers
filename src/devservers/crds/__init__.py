@@ -1,3 +1,3 @@
-from .devserver import DevServer, PersistentHomeSpec
+from .devserver import DevServer
 
-__all__ = ["DevServer", "PersistentHomeSpec"]
+__all__ = ["DevServer"]
