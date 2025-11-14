@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from devservers.operator.devserver.resources.deployment import build_deployment
 from devservers.operator.devserveruser.reconciler import DevServerUserReconciler
@@ -206,6 +208,78 @@ def test_build_deployment_with_multiple_volumes():
     assert mount_paths["/data"]["readOnly"]
     assert not mount_paths["/home/dev"]["readOnly"]
     assert not mount_paths["/outputs"]["readOnly"]
+
+
+def test_flavor_volumes_keep_home_emptydir():
+    """Flavors adding non-home volumes must retain the default /home/dev"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {}
+    flavor = {
+        "spec": {
+            "resources": {},
+            "volumes": [
+                {
+                    "claimName": "shared-data",
+                    "mountPath": "/data",
+                }
+            ],
+        }
+    }
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    volumes = deployment["spec"]["template"]["spec"]["volumes"]
+    home_volume = next((v for v in volumes if v.get("name") == "home"), None)
+    assert home_volume is not None
+    assert "emptyDir" in home_volume
+
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    home_mount = next(
+        (vm for vm in container["volumeMounts"] if vm.get("mountPath") == "/home/dev"),
+        None,
+    )
+    assert home_mount is not None
+    assert home_mount.get("name") == "home"
+
+
+def test_volume_names_remain_valid_when_truncated():
+    """Volume names should remain valid even with long claim names."""
+    name = "test-server"
+    namespace = "test-ns"
+    long_claim = "a" * 58  # near Kubernetes limit but valid
+    spec = {
+        "volumes": [
+            {
+                "claimName": long_claim,
+                "mountPath": "/very/long/path/that/keeps/going",
+            }
+        ]
+    }
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    volumes = deployment["spec"]["template"]["spec"]["volumes"]
+    user_volume = next((v for v in volumes if v.get("name", "").startswith("vol-")), None)
+    assert user_volume is not None
+    volume_name = user_volume["name"]
+    assert len(volume_name) <= 63
+    assert re.match(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", volume_name)
 
 
 def test_build_deployment_kind_is_deployment():

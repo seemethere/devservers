@@ -42,6 +42,18 @@ spec:
                   items:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    required: ["claimName", "mountPath"]
+                    properties:
+                      claimName:
+                        type: string
+                      mountPath:
+                        type: string
+                      readOnly:
+                        type: boolean
             status:
               type: object
               properties:

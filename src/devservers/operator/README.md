@@ -54,6 +54,8 @@ spec:
 
 Tolerations can also be specified to allow DevServers to be scheduled on nodes with matching taints, such as GPU nodes.
 
+In addition to compute resources, flavors can specify a list of `volumes` to be mounted into the DevServer. This is useful for providing shared storage, datasets, or pre-configured environments. Volumes specified directly in a `DevServer` will override flavor volumes with the same `mountPath`.
+
 Cluster administrators can mark a flavor as the default by setting `spec.default: true`. When a default flavor is configured, users can create DevServers without explicitly specifying a flavor. Only one flavor can be marked as default at a time.
 
 **Example `DevServerFlavor`:**
@@ -78,6 +80,10 @@ spec:
     - key: "nvidia.com/gpu"
       operator: "Exists"
       effect: "NoSchedule"
+  volumes:
+    - claimName: "shared-data"
+      mountPath: "/data"
+      readOnly: true
 status:
   schedulable: "Yes"
 ```
