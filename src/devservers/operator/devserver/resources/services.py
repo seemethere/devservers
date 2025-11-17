@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 
 def build_headless_service(name: str, namespace: str) -> Dict[str, Any]:
-    """Builds the headless Service for the StatefulSet."""
+    """Builds the headless Service for the Deployment."""
     return {
         "apiVersion": "v1",
         "kind": "Service",

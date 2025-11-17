@@ -10,8 +10,7 @@ import yaml
 
 from devservers.cli import handlers
 from tests.conftest import TEST_NAMESPACE
-from kubernetes import client
-from tests.helpers import async_wait_for, wait_for_devserver_to_exist
+from tests.helpers import async_wait_for, wait_for_devserver_to_exist, wait_for_pod_ready_by_label
 from devservers.cli.config import (
     Configuration,
     _discover_default_ssh_keys,
@@ -39,7 +38,6 @@ async def test_ssh_command_functional_on_various_images(
     # Sanitize image name for use in devserver name
     sanitized_image_name = image.replace(":", "-").replace("/", "-")
     devserver_name = f"ssh-test-{sanitized_image_name}-{uuid.uuid4().hex[:6]}"
-    pod_name = f"{devserver_name}-0"
 
     try:
         # Create a DevServer for the test
@@ -53,28 +51,12 @@ async def test_ssh_command_functional_on_various_images(
             ssh_public_key_file=test_ssh_key_pair["public"],
         )
 
-        # Wait for the pod to be running and ready
-        async def is_pod_ready():
-            try:
-                pod = await asyncio.to_thread(
-                    core_api.read_namespaced_pod,
-                    name=pod_name,
-                    namespace=TEST_NAMESPACE,
-                )
-                if pod.status.phase == "Running" and pod.status.container_statuses:
-                    if all(cs.ready for cs in pod.status.container_statuses):
-                        return True
-            except client.ApiException as e:
-                if e.status == 404:
-                    return False  # Pod not found yet, continue polling
-                raise  # Re-raise other API errors
-            return False
-
-        await async_wait_for(
-            is_pod_ready,
-            timeout=120,
-            interval=2,
-            failure_message=f"Pod {pod_name} did not become ready in time.",
+        # Wait for the pod to be running and ready (using label selector for Deployments)
+        await wait_for_pod_ready_by_label(
+            core_api,
+            label_selector=f"app={devserver_name}",
+            namespace=TEST_NAMESPACE,
+            timeout=120
         )
 
         # Capture stdout to check the command output
@@ -188,6 +170,14 @@ async def test_ssh_config_file_management(
             k8s_clients["custom_objects_api"], devserver_name, TEST_NAMESPACE
         )
 
+        # Wait for the pod to be ready (Deployment creates pods)
+        await wait_for_pod_ready_by_label(
+            k8s_clients["core_v1"],
+            label_selector=f"app={devserver_name}",
+            namespace=TEST_NAMESPACE,
+            timeout=120
+        )
+
         await asyncio.to_thread(
             handlers.ssh_devserver,
             configuration=test_config_with_path,
@@ -220,7 +210,6 @@ async def test_ssh_config_file_management(
         assert expected_proxy_command in content
         assert "IdentityAgent SSH_AUTH_SOCK" in content
 
-    finally:
         # 3. Test cleanup on deletion
         await asyncio.to_thread(
             handlers.delete_devserver,
@@ -229,6 +218,19 @@ async def test_ssh_config_file_management(
             namespace=TEST_NAMESPACE,
         )
         assert not config_file.exists()
+
+    except Exception:
+        # Cleanup on error
+        try:
+            await asyncio.to_thread(
+                handlers.delete_devserver,
+                configuration=test_config_with_path,
+                name=devserver_name,
+                namespace=TEST_NAMESPACE,
+            )
+        except Exception:
+            pass
+        raise
 
     # 4. Test cleanup of stale config for expired/non-existent devserver
     # Manually create a stale config file with the same naming pattern
@@ -369,6 +371,14 @@ async def test_ssh_config_with_kubeconfig_path(
 
         await wait_for_devserver_to_exist(
             k8s_clients["custom_objects_api"], devserver_name, TEST_NAMESPACE
+        )
+
+        # Wait for the pod to be ready (Deployment creates pods)
+        await wait_for_pod_ready_by_label(
+            k8s_clients["core_v1"],
+            label_selector=f"app={devserver_name}",
+            namespace=TEST_NAMESPACE,
+            timeout=120
         )
 
         await asyncio.to_thread(

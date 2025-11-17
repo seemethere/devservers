@@ -4,10 +4,11 @@ import select
 from typing import Optional, cast
 import io
 
-from ...utils.kube import KubernetesConfigurationError, configure_kube_client
+from ...utils.kube import KubernetesConfigurationError, configure_kube_client, get_pod_by_labels
 from ...utils.network import kubernetes_port_forward
 from ..utils import get_current_context
 from ...crds.devserver import DevServer
+from kubernetes import client
 
 
 def ssh_proxy_devserver(
@@ -34,8 +35,14 @@ def ssh_proxy_devserver(
         # Check if DevServer exists
         DevServer.get(name=name, namespace=target_namespace)
 
-        # TODO: The pod name should be dynamically retrieved
-        pod_name = f"{name}-0"
+        # Get pod by label selector
+        core_v1_api = client.CoreV1Api()
+        pod = get_pod_by_labels(core_v1_api, target_namespace, {"app": name})
+        if not pod:
+            sys.exit(1)
+
+        assert pod.metadata is not None
+        pod_name = pod.metadata.name
 
         with kubernetes_port_forward(
             pod_name=pod_name, namespace=target_namespace, pod_port=22, silent=True

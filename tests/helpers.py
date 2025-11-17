@@ -43,6 +43,7 @@ def build_devserver_spec(
     image: Optional[str] = "ubuntu:22.04",
     ttl: Optional[str] = "10m",
     lifecycle: Optional[Mapping[str, Any]] = None,
+    volumes: Optional[list[dict[str, Any]]] = None,
     overrides: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """
@@ -61,6 +62,9 @@ def build_devserver_spec(
         spec["lifecycle"] = dict(lifecycle)
     elif ttl is not None:
         spec["lifecycle"] = {"timeToLive": ttl}
+
+    if volumes is not None:
+        spec["volumes"] = volumes
 
     if overrides:
         spec.update(overrides)
@@ -97,16 +101,16 @@ def wait_for(
     pytest.fail(failure_message)
 
 
-async def wait_for_statefulset_to_exist(
+async def wait_for_deployment_to_exist(
     apps_v1_api: client.AppsV1Api, name: str, namespace: str, timeout: int = 30
 ) -> Any:
-    """Waits for a StatefulSet to exist and returns it."""
-    print(f"⏳ Waiting for statefulset '{name}' to be created by operator...")
+    """Waits for a Deployment to exist and returns it."""
+    print(f"⏳ Waiting for deployment '{name}' to be created by operator...")
 
     async def check():
         try:
             return await asyncio.to_thread(
-                apps_v1_api.read_namespaced_stateful_set,
+                apps_v1_api.read_namespaced_deployment,
                 name=name,
                 namespace=namespace,
             )
@@ -115,25 +119,25 @@ async def wait_for_statefulset_to_exist(
                 return None  # Not found yet, continue polling
             raise  # Other errors should fail the test
 
-    statefulset = await async_wait_for(
+    deployment = await async_wait_for(
         check,
         timeout=timeout,
-        failure_message=f"StatefulSet '{name}' did not appear within {timeout} seconds.",
+        failure_message=f"Deployment '{name}' did not appear within {timeout} seconds.",
     )
-    print(f"✅ StatefulSet '{name}' found.")
-    return statefulset
+    print(f"✅ Deployment '{name}' found.")
+    return deployment
 
 
-async def wait_for_statefulset_to_be_deleted(
+async def wait_for_deployment_to_be_deleted(
     apps_v1_api: client.AppsV1Api, name: str, namespace: str, timeout: int = 60
 ):
-    """Waits for a StatefulSet to be deleted."""
-    print(f"⏳ Waiting for statefulset '{name}' to be deleted...")
+    """Waits for a Deployment to be deleted."""
+    print(f"⏳ Waiting for deployment '{name}' to be deleted...")
 
     async def check():
         try:
             await asyncio.to_thread(
-                apps_v1_api.read_namespaced_stateful_set, name=name, namespace=namespace
+                apps_v1_api.read_namespaced_deployment, name=name, namespace=namespace
             )
             return None  # Still exists, continue polling
         except client.ApiException as e:
@@ -144,9 +148,48 @@ async def wait_for_statefulset_to_be_deleted(
     await async_wait_for(
         check,
         timeout=timeout,
-        failure_message=f"StatefulSet '{name}' was not deleted within {timeout} seconds.",
+        failure_message=f"Deployment '{name}' was not deleted within {timeout} seconds.",
     )
-    print(f"✅ StatefulSet '{name}' deleted.")
+    print(f"✅ Deployment '{name}' deleted.")
+
+
+async def wait_for_pod_ready_by_label(
+    core_v1_api: client.CoreV1Api,
+    label_selector: str,
+    namespace: str,
+    timeout: int = 120
+) -> Any:
+    """Waits for a pod matching the label selector to be ready."""
+    print(f"⏳ Waiting for pod with labels '{label_selector}' to be ready...")
+
+    async def check():
+        try:
+            pod_list = await asyncio.to_thread(
+                core_v1_api.list_namespaced_pod,
+                namespace=namespace,
+                label_selector=label_selector,
+            )
+            if pod_list.items:
+                pod = pod_list.items[0]
+                if (
+                    pod.status.phase == "Running"
+                    and pod.status.container_statuses
+                    and all(cs.ready for cs in pod.status.container_statuses)
+                ):
+                    return pod
+        except client.ApiException as e:
+            if e.status == 404:
+                return None
+            raise
+        return None
+
+    pod = await async_wait_for(
+        check,
+        timeout=timeout,
+        failure_message=f"Pod with labels '{label_selector}' did not become ready within {timeout} seconds.",
+    )
+    print(f"✅ Pod '{pod.metadata.name}' is ready.")
+    return pod
 
 
 async def wait_for_devserver_to_be_deleted(

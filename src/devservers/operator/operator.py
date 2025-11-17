@@ -57,9 +57,6 @@ async def on_startup(
         raise kopf.PermanentError(str(exc)) from exc
 
     logger.info("Operator started.")
-    logger.info(
-        f"Default persistent home size: {operator_config.default_persistent_home_size}"
-    )
 
     # The default worker limit is unbounded which means you can EASILY flood
     # your API server on restart unless you limit it. 1-5 are the generally

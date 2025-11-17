@@ -1,10 +1,10 @@
 import pytest
-from devservers.operator.devserver.resources.statefulset import build_statefulset
+from devservers.operator.devserver.resources.deployment import build_deployment
 from devservers.operator.devserveruser.reconciler import DevServerUserReconciler
 from unittest.mock import MagicMock
 from kubernetes.client.rest import ApiException
 
-def test_build_statefulset_with_node_selector():
+def test_build_deployment_with_node_selector():
     name = "test-server"
     namespace = "test-ns"
     spec = {
@@ -25,23 +25,22 @@ def test_build_statefulset_with_node_selector():
         }
     }
 
-    statefulset = build_statefulset(
+    deployment = build_deployment(
         name,
         namespace,
         spec,
         flavor,
-        default_persistent_home_size="10Gi",
         default_devserver_image="default-image",
         static_dependencies_image="static-image",
     )
 
-    assert "nodeSelector" in statefulset["spec"]["template"]["spec"]
-    assert statefulset["spec"]["template"]["spec"]["nodeSelector"] == {
+    assert "nodeSelector" in deployment["spec"]["template"]["spec"]
+    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {
         "disktype": "ssd",
         "team": "backend"
     }
 
-def test_build_statefulset_without_node_selector():
+def test_build_deployment_without_node_selector():
     name = "test-server"
     namespace = "test-ns"
     spec = {
@@ -58,105 +57,198 @@ def test_build_statefulset_without_node_selector():
         }
     }
 
-    statefulset = build_statefulset(
+    deployment = build_deployment(
         name,
         namespace,
         spec,
         flavor,
-        default_persistent_home_size="10Gi",
         default_devserver_image="default-image",
         static_dependencies_image="static-image",
     )
 
-    assert "nodeSelector" not in statefulset["spec"]["template"]["spec"]
+    assert "nodeSelector" not in deployment["spec"]["template"]["spec"]
 
 
-def test_build_statefulset_with_persistent_home_enabled():
-    name = "test-server"
-    namespace = "test-ns"
-    spec = {"persistentHome": {"enabled": True}}
-    flavor = {"spec": {"resources": {}}}
-
-    statefulset = build_statefulset(
-        name,
-        namespace,
-        spec,
-        flavor,
-        default_persistent_home_size="10Gi",
-        default_devserver_image="default-image",
-        static_dependencies_image="static-image",
-    )
-
-    assert "volumeClaimTemplates" in statefulset["spec"]
-    vct = statefulset["spec"]["volumeClaimTemplates"][0]
-    assert vct["metadata"]["name"] == "home"
-    assert vct["spec"]["resources"]["requests"]["storage"] == "10Gi"
-
-    volumes = statefulset["spec"]["template"]["spec"]["volumes"]
-    assert not any(v.get("name") == "home" and "emptyDir" in v for v in volumes)
-
-
-def test_build_statefulset_with_persistent_home_enabled_and_size():
-    name = "test-server"
-    namespace = "test-ns"
-    spec = {"persistentHome": {"enabled": True, "size": "20Gi"}}
-    flavor = {"spec": {"resources": {}}}
-
-    statefulset = build_statefulset(
-        name,
-        namespace,
-        spec,
-        flavor,
-        default_persistent_home_size="10Gi",
-        default_devserver_image="default-image",
-        static_dependencies_image="static-image",
-    )
-
-    assert "volumeClaimTemplates" in statefulset["spec"]
-    vct = statefulset["spec"]["volumeClaimTemplates"][0]
-    assert vct["spec"]["resources"]["requests"]["storage"] == "20Gi"
-
-
-def test_build_statefulset_with_persistent_home_disabled():
-    name = "test-server"
-    namespace = "test-ns"
-    spec = {"persistentHome": {"enabled": False}}
-    flavor = {"spec": {"resources": {}}}
-
-    statefulset = build_statefulset(
-        name,
-        namespace,
-        spec,
-        flavor,
-        default_persistent_home_size="10Gi",
-        default_devserver_image="default-image",
-        static_dependencies_image="static-image",
-    )
-
-    assert "volumeClaimTemplates" not in statefulset["spec"]
-    volumes = statefulset["spec"]["template"]["spec"]["volumes"]
-    assert any(v.get("name") == "home" and "emptyDir" in v for v in volumes)
-
-
-def test_build_statefulset_with_persistent_home_unspecified():
+def test_build_deployment_with_no_volumes():
+    """Test that no volumes specified results in emptyDir at /home/dev"""
     name = "test-server"
     namespace = "test-ns"
     spec = {}
     flavor = {"spec": {"resources": {}}}
 
-    statefulset = build_statefulset(
+    deployment = build_deployment(
         name,
         namespace,
         spec,
         flavor,
-        default_persistent_home_size="10Gi",
         default_devserver_image="default-image",
         static_dependencies_image="static-image",
     )
 
-    assert "volumeClaimTemplates" not in statefulset["spec"]
-    volumes = statefulset["spec"]["template"]["spec"]["volumes"]
-    assert any(v.get("name") == "home" and "emptyDir" in v for v in volumes)
+    # Should have emptyDir volume named "home"
+    volumes = deployment["spec"]["template"]["spec"]["volumes"]
+    home_volume = next((v for v in volumes if v.get("name") == "home"), None)
+    assert home_volume is not None, "home volume not found"
+    assert "emptyDir" in home_volume, "home volume should be emptyDir"
+
+    # Should have mount at /home/dev
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    home_mount = next(
+        (vm for vm in container["volumeMounts"] if vm.get("name") == "home"),
+        None
+    )
+    assert home_mount is not None, "home mount not found"
+    assert home_mount["mountPath"] == "/home/dev"
+
+
+def test_build_deployment_with_single_volume():
+    """Test that a single volume is mounted correctly"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {
+        "volumes": [
+            {
+                "claimName": "my-pvc",
+                "mountPath": "/home/dev",
+                "readOnly": False
+            }
+        ]
+    }
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    # Should NOT have emptyDir home volume
+    volumes = deployment["spec"]["template"]["spec"]["volumes"]
+    home_volume = next((v for v in volumes if v.get("name") == "home"), None)
+    assert home_volume is None, "home emptyDir volume should not exist when volumes are specified"
+
+    # Should have user volume
+    user_volume = next((v for v in volumes if v.get("name", "").startswith("vol-")), None)
+    assert user_volume is not None, "user volume not found"
+    assert "persistentVolumeClaim" in user_volume
+    assert user_volume["persistentVolumeClaim"]["claimName"] == "my-pvc"
+
+    # Should have mount at /home/dev
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    user_mount = next(
+        (vm for vm in container["volumeMounts"] if vm.get("name", "").startswith("vol-")),
+        None
+    )
+    assert user_mount is not None, "user mount not found"
+    assert user_mount["mountPath"] == "/home/dev"
+    assert not user_mount["readOnly"]
+
+
+def test_build_deployment_with_multiple_volumes():
+    """Test that multiple volumes are mounted correctly"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {
+        "volumes": [
+            {
+                "claimName": "home-pvc",
+                "mountPath": "/home/dev",
+                "readOnly": False
+            },
+            {
+                "claimName": "data-pvc",
+                "mountPath": "/data",
+                "readOnly": True
+            },
+            {
+                "claimName": "output-pvc",
+                "mountPath": "/outputs",
+                "readOnly": False
+            }
+        ]
+    }
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    # Should have 3 user volumes
+    volumes = deployment["spec"]["template"]["spec"]["volumes"]
+    user_volumes = [v for v in volumes if v.get("name", "").startswith("vol-")]
+    assert len(user_volumes) == 3, f"Expected 3 user volumes, got {len(user_volumes)}"
+
+    # Verify PVC claim names
+    claim_names = {v["persistentVolumeClaim"]["claimName"] for v in user_volumes}
+    assert claim_names == {"home-pvc", "data-pvc", "output-pvc"}
+
+    # Should have 3 user mounts
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    user_mounts = [
+        vm for vm in container["volumeMounts"]
+        if vm.get("name", "").startswith("vol-")
+    ]
+    assert len(user_mounts) == 3, f"Expected 3 user mounts, got {len(user_mounts)}"
+
+    # Verify mount paths and read-only flags
+    mount_paths = {vm["mountPath"]: vm for vm in user_mounts}
+    assert "/home/dev" in mount_paths
+    assert "/data" in mount_paths
+    assert "/outputs" in mount_paths
+    assert mount_paths["/data"]["readOnly"]
+    assert not mount_paths["/home/dev"]["readOnly"]
+    assert not mount_paths["/outputs"]["readOnly"]
+
+
+def test_build_deployment_kind_is_deployment():
+    """Test that the resource kind is Deployment, not StatefulSet"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {}
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    assert deployment["kind"] == "Deployment"
+    assert deployment["apiVersion"] == "apps/v1"
+    # Should NOT have serviceName field (that's StatefulSet-specific)
+    assert "serviceName" not in deployment["spec"]
+    # Should NOT have volumeClaimTemplates (that's StatefulSet-specific)
+    assert "volumeClaimTemplates" not in deployment["spec"]
+
+
+def test_build_deployment_uses_recreate_strategy():
+    """Deployment should use Recreate strategy for RWO volumes"""
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {}
+    flavor = {"spec": {"resources": {}}}
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    assert deployment["spec"].get("strategy") == {"type": "Recreate"}
 
 
 def test_compute_user_namespace_default():
