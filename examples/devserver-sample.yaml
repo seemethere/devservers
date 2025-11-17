@@ -10,7 +10,6 @@ spec:
     publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." # Replace with your SSH public key
   lifecycle:
     timeToLive: "4h"
-  enableSSH: true
   # Optional: Mount persistent volumes (Docker-style)
   # volumes:
   #   - claimName: my-home-pvc

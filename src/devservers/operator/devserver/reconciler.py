@@ -10,7 +10,6 @@ import kopf
 from kubernetes import client
 
 from .resources.configmap import build_configmap, build_startup_configmap, build_login_configmap
-from .resources.services import build_ssh_service
 from .resources.deployment import build_deployment
 
 
@@ -44,9 +43,6 @@ class DevServerReconciler:
         Returns:
             Dictionary of resource objects keyed by resource type.
         """
-        # Build services
-        ssh_service = build_ssh_service(self.name, self.namespace)
-
         # Build Deployment
         deployment = build_deployment(
             self.name,
@@ -73,7 +69,6 @@ class DevServerReconciler:
             self.name, self.namespace, user_login_script_content
         )
         return {
-            "ssh_service": ssh_service,
             "deployment": deployment,
             "sshd_configmap": sshd_configmap,
             "startup_script_configmap": startup_script_configmap,
@@ -103,12 +98,7 @@ class DevServerReconciler:
         await self._reconcile_configmap(resources["startup_script_configmap"], logger)
         await self._reconcile_configmap(resources["user_login_script_configmap"], logger)
 
-        # Reconcile Services
-        if self.spec.get("enableSSH", False):
-            await self._reconcile_service(resources["ssh_service"], logger)
-        else:
-            # TODO: Handle disabling SSH on an existing DevServer by deleting the service
-            pass
+        # Note: SSH access is via kubectl port-forward to the pod, no Service needed
 
         # Reconcile Deployment
         await self._reconcile_deployment(resources["deployment"], logger)
@@ -137,33 +127,6 @@ class DevServerReconciler:
                     body=configmap,
                 )
                 logger.info(f"ConfigMap '{name}' created.")
-            else:
-                raise
-
-    async def _reconcile_service(self, service: Dict[str, Any], logger: logging.Logger) -> None:
-        """Create or update a Service."""
-        name = service["metadata"]["name"]
-        try:
-            await asyncio.to_thread(
-                self.core_v1.read_namespaced_service, name=name, namespace=self.namespace
-            )
-            # It exists, so we patch it
-            await asyncio.to_thread(
-                self.core_v1.patch_namespaced_service,
-                name=name,
-                namespace=self.namespace,
-                body=service,
-            )
-            logger.info(f"Service '{name}' patched.")
-        except client.ApiException as e:
-            if e.status == 404:
-                # It does not exist, so we create it
-                await asyncio.to_thread(
-                    self.core_v1.create_namespaced_service,
-                    namespace=self.namespace,
-                    body=service,
-                )
-                logger.info(f"Service '{name}' created.")
             else:
                 raise
 
