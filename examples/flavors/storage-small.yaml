@@ -1,0 +1,17 @@
+apiVersion: devserver.io/v1
+kind: DevServerFlavor
+metadata:
+  name: storage-small
+spec:
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  volumes:
+    - claimName: "my-data-pvc"
+      mountPath: "/data"
+    - claimName: "my-home-pvc"
+      mountPath: "/home/dev"
