@@ -1,8 +1,19 @@
+"""
+Service resource builders for DevServer.
+
+Note: SSH access to DevServers is handled via `kubectl port-forward` to the pod
+directly, so no SSH Service is required. The deployment exposes port 22 on the
+container for the SSH daemon, but clients connect through port-forwarding.
+"""
 from typing import Any, Dict
 
 
 def build_headless_service(name: str, namespace: str) -> Dict[str, Any]:
-    """Builds the headless Service for the Deployment."""
+    """Builds the headless Service for the Deployment.
+
+    Note: This function is currently unused but kept for potential future use
+    cases like distributed training service discovery.
+    """
     return {
         "apiVersion": "v1",
         "kind": "Service",
@@ -10,19 +21,5 @@ def build_headless_service(name: str, namespace: str) -> Dict[str, Any]:
         "spec": {
             "clusterIP": "None",
             "selector": {"app": name},
-        },
-    }
-
-
-def build_ssh_service(name: str, namespace: str) -> Dict[str, Any]:
-    """Builds the NodePort Service for SSH access."""
-    return {
-        "apiVersion": "v1",
-        "kind": "Service",
-        "metadata": {"name": f"{name}-ssh", "namespace": namespace},
-        "spec": {
-            "type": "NodePort",
-            "selector": {"app": name},
-            "ports": [{"port": 22, "targetPort": 22, "protocol": "TCP"}],
         },
     }

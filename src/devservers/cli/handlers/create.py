@@ -134,7 +134,6 @@ def create_devserver(
         "flavor": flavor,
         "ssh": {"publicKey": ssh_public_key},
         "lifecycle": {"timeToLive": time_to_live},
-        "enableSSH": True,
     }
 
     # Parse and add volumes if provided

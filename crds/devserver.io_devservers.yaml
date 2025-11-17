@@ -57,8 +57,6 @@ spec:
                       readOnly:
                         type: boolean
                         default: false
-                enableSSH:
-                  type: boolean
                 ssh:
                   type: object
                   required: ["publicKey"]

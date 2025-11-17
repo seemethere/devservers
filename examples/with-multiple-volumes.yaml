@@ -53,7 +53,6 @@ spec:
     publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..." # Replace with your SSH public key
   lifecycle:
     timeToLive: "8h"
-  enableSSH: true
 
   # Multiple volumes at different paths
   volumes:

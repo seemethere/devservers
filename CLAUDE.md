@@ -39,7 +39,6 @@ spec:
 
   persistentHomeSize: 100Gi
   sharedVolumeClaimName: <username>-shared-efs
-  enableSSH: true
 
   lifecycle:
     idleTimeout: 3600

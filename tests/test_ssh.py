@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 import pytest
 import yaml
+from kubernetes import client
 
 from devservers.cli import handlers
 from tests.conftest import TEST_NAMESPACE
@@ -467,3 +468,86 @@ def test_create_default_config_writes_discovered_key_pair(
     config_data = yaml.safe_load(config_path.read_text())
     assert config_data["ssh"]["private_key_file"] == str(ssh_dir / "id_ed25519")
     assert config_data["ssh"]["public_key_file"] == str(ssh_dir / "id_ed25519.pub")
+
+
+@pytest.mark.asyncio
+async def test_no_ssh_nodeport_service_created(
+    operator_running: Any,
+    k8s_clients: Dict[str, Any],
+    test_flavor: str,
+    test_ssh_key_pair: dict[str, str],
+    test_config: Configuration,
+) -> None:
+    """
+    Verifies that no NodePort SSH service is created for a DevServer.
+    SSH connections should use port-forwarding directly to the pod.
+    """
+    devserver_name = f"no-service-test-{uuid.uuid4().hex[:6]}"
+    core_api = k8s_clients["core_v1"]
+
+    try:
+        # Create a DevServer
+        await asyncio.to_thread(
+            handlers.create_devserver,
+            configuration=test_config,
+            name=devserver_name,
+            flavor=test_flavor,
+            namespace=TEST_NAMESPACE,
+            ssh_public_key_file=test_ssh_key_pair["public"],
+        )
+
+        # Wait for the DevServer to exist
+        await wait_for_devserver_to_exist(
+            k8s_clients["custom_objects_api"], devserver_name, TEST_NAMESPACE
+        )
+
+        # Wait for the pod to be ready
+        await wait_for_pod_ready_by_label(
+            core_api,
+            label_selector=f"app={devserver_name}",
+            namespace=TEST_NAMESPACE,
+            timeout=120
+        )
+
+        # Check that no SSH NodePort service was created
+        # The service would be named {devserver_name}-ssh if it existed
+        ssh_service_name = f"{devserver_name}-ssh"
+        try:
+            await asyncio.to_thread(
+                core_api.read_namespaced_service,
+                name=ssh_service_name,
+                namespace=TEST_NAMESPACE
+            )
+            # If we reach this point, the service exists - which is bad
+            pytest.fail(f"SSH NodePort service '{ssh_service_name}' should not exist")
+        except client.ApiException as e:
+            # We expect a 404 (Not Found) error
+            assert e.status == 404, f"Expected 404 error, got {e.status}"
+
+        # Verify the deployment exists and has port 22 exposed on the container
+        # This is still needed for SSH to work via port-forwarding
+        deployment = await asyncio.to_thread(
+            k8s_clients["apps_v1"].read_namespaced_deployment,
+            name=devserver_name,
+            namespace=TEST_NAMESPACE
+        )
+        containers = deployment.spec.template.spec.containers
+        assert len(containers) > 0, "Deployment should have at least one container"
+
+        # Check that port 22 is exposed on the main container
+        main_container = containers[0]
+        ports = main_container.ports or []
+        ssh_port_found = any(port.container_port == 22 for port in ports)
+        assert ssh_port_found, "Container should expose port 22 for SSH daemon"
+
+    finally:
+        # Cleanup
+        try:
+            await asyncio.to_thread(
+                handlers.delete_devserver,
+                configuration=test_config,
+                name=devserver_name,
+                namespace=TEST_NAMESPACE,
+            )
+        except Exception:
+            pass
