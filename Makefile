@@ -2,7 +2,7 @@
 VERBOSE ?= 0
 MAX_JOBS ?= 4
 NAMESPACE ?= default
-PYTEST_VERBOSE = $(if $(filter 1,$(VERBOSE)),-s,)
+PYTEST_VERBOSE = $(if $(filter 1,$(VERBOSE)),-v -s,)
 PYTEST_PARALLEL_JOBS = $(if $(MAX_JOBS),-n $(MAX_JOBS),)
 KOPF = uv run kopf
 PYTHON = uv run python
@@ -18,7 +18,7 @@ sync:
 .PHONY: test
 test: lint sync
 	@echo "🧪 Running tests$(if $(MAX_JOBS), with $(MAX_JOBS) parallel jobs,)$(if $(filter 1,$(VERBOSE)), with verbose output,)... (use VERBOSE=1 for detailed output, MAX_JOBS=<n> for parallel tests)"
-	$(PYTEST) $(PYTEST_PARALLEL_JOBS) -v $(PYTEST_VERBOSE) tests
+	$(PYTEST) $(PYTEST_PARALLEL_JOBS) $(PYTEST_VERBOSE) tests
 
 .PHONY: install-crds
 install-crds: crds/*.yaml
