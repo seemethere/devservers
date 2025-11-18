@@ -15,20 +15,19 @@ The operator introduces two Custom Resource Definitions (CRDs):
 When a `DevServer` resource is created or updated, the operator provisions the necessary Kubernetes objects to run the development environment, including:
 
 -   A `Deployment` to manage the pod.
--   `Services` for network access (including SSH).
--   A `Secret` for SSH host keys. The operator will automatically generate this secret if it doesn't exist.
--   A `ConfigMap` for the SSH daemon configuration, which includes a custom message of the day (motd) and allows SSH agent forwarding.
+-   `Services` are currently not used (SSH access is handled via port-forwarding).
+-   A `ConfigMap` containing the startup scripts (`startup.sh`, `user_login.sh`) and the SSH daemon configuration.
 
 The operator watches for changes to `DevServer` resources and will automatically apply updates. For example, changing the `image` in a `DevServer`'s `spec` will cause the operator to update the `Deployment` to roll out a new pod with the new image.
 
 ### Container Startup Script
 
-The operator injects a `startup.sh` script into the `DevServer` container. This script is responsible for:
+The operator injects a `startup.sh` script (via ConfigMap) into the `DevServer` container. This script is responsible for:
 
--   **User Creation**: It creates a non-root `dev` user with UID/GID `1000`. The script is designed to be idempotent and work across different Linux distributions (e.g., Debian-based and Red Hat-based) by handling cases where a user or group with that ID already exists.
--   **Privilege Escalation**: The environment includes `doas` as a lightweight `sudo` replacement (if sudo is not already available). The `dev` user is configured with passwordless access to run commands as root (e.g., `doas apt-get update`).
--   **SSH Setup**: It configures the `dev` user's `authorized_keys` with the public key from the `DevServer` spec.
--   **SSHD Execution**: It starts the SSH daemon (`sshd`) as the final step, allowing the user to connect.
+-   **User Creation**: It creates a non-root `dev` user with UID/GID `1000`.
+-   **Privilege Escalation**: The environment includes `doas` as a lightweight `sudo` replacement.
+-   **SSH Setup**: It configures the `dev` user's `authorized_keys` and generates SSH host keys at runtime if they don't exist.
+-   **SSHD Execution**: It starts the SSH daemon (`sshd`) as the final step.
 
 **Example `DevServer`:**
 

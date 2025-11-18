@@ -64,26 +64,27 @@ def build_deployment(
                             {"name": "home", "mountPath": "/home/dev"},
                             {"name": "bin", "mountPath": "/opt/bin"},
                             {
-                                "name": "startup-script",
-                                "mountPath": "/devserver",
+                                "name": "config-volume",
+                                "mountPath": "/devserver/startup.sh",
+                                "subPath": "startup.sh",
                                 "readOnly": True,
                             },
                             {
-                                "name": "login-script",
-                                "mountPath": "/devserver-login/user_login.sh",
-                                "mode": 0o755,
+                                "name": "config-volume",
+                                "mountPath": "/opt/bin/user_login.sh",
                                 "subPath": "user_login.sh",
                                 "readOnly": True,
                             },
+                            # Mount sshd_config to a temporary location so startup.sh can copy it
+                            # to /etc/ssh/sshd_config with correct permissions if needed.
+                            # However, mounting directly to /etc/ssh/sshd_config is also possible
+                            # if the file permissions (usually 644 root:root) provided by ConfigMap are sufficient.
+                            # sshd often requires strict permissions.
+                            # Let's mount to /opt/ssh/sshd_config as before to be safe and consistent.
                             {
-                                "name": "sshd-config",
+                                "name": "config-volume",
                                 "mountPath": "/opt/ssh/sshd_config",
                                 "subPath": "sshd_config",
-                                "readOnly": True,
-                            },
-                            {
-                                "name": "host-keys",
-                                "mountPath": "/opt/ssh/hostkeys",
                                 "readOnly": True,
                             },
                         ],
@@ -99,28 +100,10 @@ def build_deployment(
                 "volumes": [
                     {"name": "bin", "emptyDir": {}},
                     {
-                        "name": "startup-script",
+                        "name": "config-volume",
                         "configMap": {
-                            "name": f"{name}-startup-script",
-                            "defaultMode": 0o755,
-                        },
-                    },
-                    {
-                        "name": "login-script",
-                        "configMap": {
-                            "name": f"{name}-login-script",
-                            "defaultMode": 0o755,
-                        },
-                    },
-                    {
-                        "name": "sshd-config",
-                        "configMap": {"name": f"{name}-sshd-config"},
-                    },
-                    {
-                        "name": "host-keys",
-                        "secret": {
-                            "secretName": f"{name}-host-keys",
-                            "defaultMode": 0o600,
+                            "name": f"{name}-config",
+                            "defaultMode": 0o755,  # Make scripts executable by default
                         },
                     },
                 ],
