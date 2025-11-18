@@ -325,6 +325,30 @@ def test_build_deployment_uses_recreate_strategy():
     assert deployment["spec"].get("strategy") == {"type": "Recreate"}
 
 
+def test_build_deployment_uses_flavor_default_image():
+    name = "test-server"
+    namespace = "test-ns"
+    spec = {}
+    flavor = {
+        "spec": {
+            "defaultImage": "flavor-image",
+            "resources": {}
+        }
+    }
+
+    deployment = build_deployment(
+        name,
+        namespace,
+        spec,
+        flavor,
+        default_devserver_image="default-image",
+        static_dependencies_image="static-image",
+    )
+
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    assert container["image"] == "flavor-image"
+
+
 def test_compute_user_namespace_default():
     spec = {"username": "alice"}
     reconciler = DevServerUserReconciler(spec=spec, metadata={})
