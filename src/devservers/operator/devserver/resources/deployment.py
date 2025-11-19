@@ -12,7 +12,9 @@ def build_deployment(
     static_dependencies_image: str,
 ) -> Dict[str, Any]:
     """Builds the Deployment for the DevServer."""
-    image = spec.get("image", default_devserver_image)
+    image = spec.get("image")
+    if not image:
+        image = flavor["spec"].get("defaultImage", default_devserver_image)
 
     # Get the public key from the spec
     ssh_public_key = spec.get("ssh", {}).get("publicKey", "")
