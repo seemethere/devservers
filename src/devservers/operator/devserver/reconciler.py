@@ -9,7 +9,7 @@ from typing import Any, Dict
 import kopf
 from kubernetes import client
 
-from .resources.configmap import build_configmap, build_startup_configmap, build_login_configmap
+from .resources.configmap import build_config_configmap
 from .resources.deployment import build_deployment
 
 
@@ -54,25 +54,29 @@ class DevServerReconciler:
         )
 
         # Build ConfigMaps
-        sshd_configmap = build_configmap(self.name, self.namespace)
-
         script_path = os.path.join(os.path.dirname(__file__), "resources", "startup.sh")
         with open(script_path, "r") as f:
             startup_script_content = f.read()
-        startup_script_configmap = build_startup_configmap(
-            self.name, self.namespace, startup_script_content
-        )
+
         script_path = os.path.join(os.path.dirname(__file__), "resources", "user_login.sh")
         with open(script_path, "r") as f:
             user_login_script_content = f.read()
-        user_login_script_configmap = build_login_configmap(
-            self.name, self.namespace, user_login_script_content
+
+        script_path = os.path.join(os.path.dirname(__file__), "resources", "sshd_config")
+        with open(script_path, "r") as f:
+            sshd_config_content = f.read()
+
+        config_configmap = build_config_configmap(
+            self.name,
+            self.namespace,
+            startup_script_content,
+            user_login_script_content,
+            sshd_config_content,
         )
+
         return {
             "deployment": deployment,
-            "sshd_configmap": sshd_configmap,
-            "startup_script_configmap": startup_script_configmap,
-            "user_login_script_configmap": user_login_script_configmap,
+            "config_configmap": config_configmap,
         }
 
     def adopt_resources(self, resources: Dict[str, Any]) -> None:
@@ -94,9 +98,7 @@ class DevServerReconciler:
             logger: Logger instance
         """
         # Reconcile ConfigMaps
-        await self._reconcile_configmap(resources["sshd_configmap"], logger)
-        await self._reconcile_configmap(resources["startup_script_configmap"], logger)
-        await self._reconcile_configmap(resources["user_login_script_configmap"], logger)
+        await self._reconcile_configmap(resources["config_configmap"], logger)
 
         # Note: SSH access is via kubectl port-forward to the pod, no Service needed
 

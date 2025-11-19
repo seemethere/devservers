@@ -1,0 +1,14 @@
+# This file is managed by the devserver operator
+
+Port 22
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PrintMotd no
+ForceCommand /opt/bin/user_login.sh
+Subsystem sftp /opt/bin/sftp-server
+AuthorizedKeysFile /home/dev/.ssh/authorized_keys
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+AllowAgentForwarding yes
