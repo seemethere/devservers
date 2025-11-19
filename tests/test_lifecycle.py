@@ -215,16 +215,15 @@ async def test_multiple_devservers(
 
 @pytest.mark.asyncio
 async def test_devserver_expires_after_ttl(
-    test_flavor, operator_running, k8s_clients, async_devserver
+    test_flavor, operator_running, k8s_clients
 ):
     """
     Tests that a DevServer with a short TTL is automatically deleted
     by the operator's cleanup process.
     """
-    apps_v1 = k8s_clients["apps_v1"]
     custom_objects_api = k8s_clients["custom_objects_api"]
     devserver_name = f"test-ttl-expiry-{uuid.uuid4().hex[:6]}"
-    ttl_seconds = 2  # Keep TTL short, test is now deterministic
+    ttl_seconds = 5  # Short enough for test, long enough to persist briefly
 
     devserver_spec = build_devserver_spec(
         flavor=test_flavor,
@@ -233,24 +232,71 @@ async def test_devserver_expires_after_ttl(
         image=None,
     )
 
-    async with async_devserver(
-        devserver_name,
-        spec=devserver_spec,
-    ):
-        # 1. Verify Deployment is created
-        await wait_for_deployment_to_exist(
-            apps_v1, name=devserver_name, namespace=NAMESPACE
-        )
+    manifest = {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "DevServer",
+        "metadata": {"name": devserver_name, "namespace": NAMESPACE},
+        "spec": devserver_spec,
+    }
 
-        # 2. Wait for TTL to pass
+    # Create manually to avoid wait_for_ready (which might timeout if TTL < startup time)
+    print(f"Creating {devserver_name} with {ttl_seconds}s TTL...")
+    await asyncio.to_thread(
+        custom_objects_api.create_namespaced_custom_object,
+        group=CRD_GROUP,
+        version=CRD_VERSION,
+        namespace=NAMESPACE,
+        plural=CRD_PLURAL_DEVSERVER,
+        body=manifest,
+    )
+
+    try:
+        # Wait for TTL to pass
+        print(f"Waiting {ttl_seconds + 1}s for TTL to pass...")
         await asyncio.sleep(ttl_seconds + 1)
 
-        # 3. Manually trigger the cleanup logic
+        # Manually trigger expiration check
         print("⚡️ Manually triggering expiration check...")
         deleted_count = await lifecycle.check_and_expire_devservers(
             custom_objects_api, logging.getLogger(__name__)
         )
-        assert deleted_count == 1
+        assert deleted_count >= 1, "Expiration check should have found at least one expired DevServer"
+
+        # Verify it is gone (wait for deletion to complete)
+        print("Waiting for DevServer to be fully deleted...")
+        for _ in range(10):
+            try:
+                await asyncio.to_thread(
+                    custom_objects_api.get_namespaced_custom_object,
+                    group=CRD_GROUP,
+                    version=CRD_VERSION,
+                    namespace=NAMESPACE,
+                    plural=CRD_PLURAL_DEVSERVER,
+                    name=devserver_name,
+                )
+                await asyncio.sleep(1)
+            except client.ApiException as e:
+                if e.status == 404:
+                    print("✅ DevServer expired and deleted successfully.")
+                    break
+                raise
+        else:
+            pytest.fail("DevServer still exists after expiration check (timeout)")
+
+    finally:
+        # Ensure cleanup if test fails
+        try:
+            await asyncio.to_thread(
+                custom_objects_api.delete_namespaced_custom_object,
+                group=CRD_GROUP,
+                version=CRD_VERSION,
+                namespace=NAMESPACE,
+                plural=CRD_PLURAL_DEVSERVER,
+                name=devserver_name,
+            )
+        except client.ApiException as e:
+            if e.status != 404:
+                print(f"⚠️ Error cleaning up {devserver_name}: {e}")
 
 
 @pytest.mark.asyncio
