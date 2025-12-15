@@ -1,0 +1,7 @@
+name: devserver-infra
+description: DevServer Kubernetes Operator Infrastructure
+runtime: python
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-python
