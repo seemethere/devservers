@@ -1,0 +1,88 @@
+# Example Build resource
+# This triggers a container image build
+apiVersion: devserver.io/v1
+kind: Build
+metadata:
+  name: my-app-build
+  namespace: default
+spec:
+  # Build context - either git or configMap
+  context:
+    git:
+      url: https://github.com/example/my-app.git
+      ref: main
+      # Optional: subdirectory to use as build context
+      # subPath: docker
+
+  # Path to Dockerfile within the context
+  dockerfile: Dockerfile
+
+  # Destination image reference (required)
+  destination: my-registry.example.com/my-app:v1.0.0
+
+  # Optional: Build arguments
+  buildArgs:
+    - name: BUILD_ENV
+      value: production
+    - name: VERSION
+      value: "1.0.0"
+
+  # Optional: Secrets to mount during build
+  # secrets:
+  #   - name: npm-registry-creds
+  #     mountPath: /root/.npmrc
+
+  # Optional: Build cache configuration
+  cache:
+    enabled: true
+    # Registry for cache storage (improves build speed)
+    # registry: my-registry.example.com/buildkit-cache
+
+  # Build priority: low, normal, high
+  priority: normal
+
+  # Build timeout
+  timeout: 30m
+
+  # Which BuilderPool to use
+  builderPool: default
+---
+# Example Build using a ConfigMap as context
+apiVersion: devserver.io/v1
+kind: Build
+metadata:
+  name: simple-build
+  namespace: default
+spec:
+  context:
+    # Use a ConfigMap containing Dockerfile
+    configMap: my-dockerfile
+  destination: my-registry.example.com/simple-app:latest
+  priority: low
+  timeout: 15m
+---
+# ConfigMap example for simple builds
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-dockerfile
+  namespace: default
+data:
+  Dockerfile: |
+    FROM python:3.11-slim
+    WORKDIR /app
+    COPY . .
+    RUN pip install -r requirements.txt
+    CMD ["python", "app.py"]
+  requirements.txt: |
+    flask==3.0.0
+  app.py: |
+    from flask import Flask
+    app = Flask(__name__)
+
+    @app.route("/")
+    def hello():
+        return "Hello, World!"
+
+    if __name__ == "__main__":
+        app.run(host="0.0.0.0", port=8080)

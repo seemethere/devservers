@@ -1,0 +1,87 @@
+# Build worker deployment
+# This runs the worker that processes build jobs from RabbitMQ
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildworker
+  namespace: buildkit-system
+  labels:
+    app: buildworker
+spec:
+  replicas: 2  # Number of workers
+  selector:
+    matchLabels:
+      app: buildworker
+  template:
+    metadata:
+      labels:
+        app: buildworker
+    spec:
+      serviceAccountName: buildworker
+      containers:
+        - name: worker
+          image: your-registry/buildworker:latest  # Update with your image
+          env:
+            - name: RABBITMQ_HOST
+              value: rabbitmq.buildkit-system.svc.cluster.local
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: BUILDKIT_HOST
+              value: tcp://default.buildkit-system.svc.cluster.local:1234
+            - name: LOG_LEVEL
+              value: INFO
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+# ServiceAccount for build worker
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: buildworker
+  namespace: buildkit-system
+---
+# ClusterRole for updating Build status
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: buildworker
+rules:
+  - apiGroups: ["devserver.io"]
+    resources: ["builds", "builds/status"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: buildworker
+subjects:
+  - kind: ServiceAccount
+    name: buildworker
+    namespace: buildkit-system
+roleRef:
+  kind: ClusterRole
+  name: buildworker
+  apiGroup: rbac.authorization.k8s.io
