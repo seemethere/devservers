@@ -22,6 +22,7 @@ dependencies = [
     "rich",
     "click>=8.0",
     "PyYAML>=6.0.1",
+    "pika>=1.3.0",  # RabbitMQ client for build queue
 ]
 
 [project.urls]

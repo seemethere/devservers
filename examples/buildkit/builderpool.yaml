@@ -1,0 +1,51 @@
+# Example BuilderPool configuration
+# This creates a pool of BuildKit daemons for executing builds
+apiVersion: devserver.io/v1
+kind: BuilderPool
+metadata:
+  name: default
+spec:
+  # Number of BuildKit daemon replicas
+  replicas: 2
+
+  # BuildKit daemon image
+  image: moby/buildkit:v0.12.4
+
+  # Resource requirements for each daemon
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  # Optional: Run on dedicated build nodes
+  # nodeSelector:
+  #   node-type: build
+
+  # Optional: Tolerate build node taints
+  # tolerations:
+  #   - key: "dedicated"
+  #     value: "build"
+  #     effect: "NoSchedule"
+
+  # Cache configuration
+  cache:
+    type: registry
+    # Registry for storing cache layers
+    # registry: your-registry.example.com/buildkit-cache
+
+  # Garbage collection policy
+  gcPolicy:
+    # Maximum cache size to keep
+    keepBytes: 50Gi
+    # Maximum age of cache entries
+    keepDuration: 168h  # 7 days
+
+  # Run BuildKit in rootless mode for security (recommended)
+  rootless: true
+
+  # Registry credentials for pushing images
+  # registrySecrets:
+  #   - registry-creds

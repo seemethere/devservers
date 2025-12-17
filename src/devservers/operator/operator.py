@@ -26,6 +26,8 @@ from .devserverflavor.lifecycle import reconcile_flavors_periodically
 from . import devserver
 from . import devserveruser
 from . import devserverflavor
+from . import build_handler
+from . import builderpool
 from .config import config as operator_config
 from ..crds.const import CRD_GROUP
 

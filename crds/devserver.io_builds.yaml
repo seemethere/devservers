@@ -1,0 +1,131 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: builds.devserver.io
+spec:
+  group: devserver.io
+  names:
+    kind: Build
+    listKind: BuildList
+    plural: builds
+    singular: build
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["context", "destination"]
+              properties:
+                context:
+                  type: object
+                  description: Build context source (git or configMap)
+                  properties:
+                    git:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                          description: Git repository URL
+                        ref:
+                          type: string
+                          description: Git ref (branch, tag, or commit)
+                          default: main
+                        subPath:
+                          type: string
+                          description: Subdirectory within the repo to use as context
+                    configMap:
+                      type: string
+                      description: ConfigMap name containing Dockerfile and context files
+                dockerfile:
+                  type: string
+                  description: Path to Dockerfile within context
+                  default: Dockerfile
+                destination:
+                  type: string
+                  description: Target image registry URL (e.g., registry.example.com/my-app:v1.0.0)
+                buildArgs:
+                  type: array
+                  description: Build arguments to pass to docker build
+                  items:
+                    type: object
+                    required: ["name", "value"]
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                secrets:
+                  type: array
+                  description: Secrets to mount during build (e.g., registry credentials)
+                  items:
+                    type: object
+                    required: ["name"]
+                    properties:
+                      name:
+                        type: string
+                        description: Name of the Kubernetes secret
+                      mountPath:
+                        type: string
+                        description: Mount path inside build container
+                cache:
+                  type: object
+                  description: Build cache configuration
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    registry:
+                      type: string
+                      description: Registry URL for cache storage
+                priority:
+                  type: string
+                  description: Build priority for queue ordering
+                  enum: [low, normal, high]
+                  default: normal
+                timeout:
+                  type: string
+                  description: Build timeout duration (e.g., 30m, 1h)
+                  default: 30m
+                  pattern: '^(\d+h)?(\d+m)?(\d+s)?$'
+                builderPool:
+                  type: string
+                  description: Name of the BuilderPool to use
+                  default: default
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Queued, Building, Succeeded, Failed, Cancelled]
+                message:
+                  type: string
+                startTime:
+                  type: string
+                  format: date-time
+                completionTime:
+                  type: string
+                  format: date-time
+                digest:
+                  type: string
+                  description: Image digest after successful build
+                queuePosition:
+                  type: integer
+                  description: Position in the build queue (when Queued)
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Destination
+          type: string
+          jsonPath: .spec.destination
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
